@@ -11,10 +11,10 @@
                  [oracle.jdbc/oracledriver "11.2.0.4"]
                  [lib-noir "0.8.4"]
                  [clj-time "0.7.0"]
-                 [org.clojure/clojurescript "0.0-2268"]
+                 [org.clojure/clojurescript "0.0-2277"]
                  [org.clojure/core.async "0.1.267.0-0d7780-alpha"]
-                 [om "0.6.5"]
-                 [secretary "1.2.0"]]
+                 [om "0.7.1"]
+                 [prismatic/om-tools "0.3.2"]]
   :plugins [[lein-ring "0.8.11"]
             [lein-cljsbuild "1.0.3"]
             [lein-less "1.7.2"]
@@ -28,7 +28,7 @@
   
   :cljsbuild { 
     :builds [{:id "dev"
-              :source-paths ["src/teatrees-client"]
+              :source-paths ["src/teatrees_client"]
               :compiler {
                 :output-to "public/js/teatrees.js"
                 :output-dir "public/js"
