@@ -14,7 +14,11 @@
   (GET "/available-games" [] (gm/available))
   (GET "/high-scores" [] (gm/high-scores))
   (GET "/field-state/:uuid" [uuid] (gm/field-state uuid))
-  (POST "/join" [uuid name] (gm/join uuid name)))
+  (POST "/join" [uuid name] (gm/join uuid name))
+
+  (GET "/" [] (ring.util.response/redirect "/index.html"))
+  (route/resources "/")
+  (route/not-found "Page not found"))
 
 (def app
   (-> (handler/site game)
