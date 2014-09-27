@@ -7,7 +7,8 @@
             [ring.middleware.format :as format]
             [teatrees.middleware.key-caser :refer :all]
             [teatrees.middleware.status-wrapper :refer :all]
-            [teatrees.game-master :as gm]))
+            [teatrees.game-master :as gm]
+            [teatrees.game :as game]))
 
 (defroutes game
   (GET "/available-games" [] (gm/available))

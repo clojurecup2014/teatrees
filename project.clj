@@ -6,6 +6,7 @@
   :dependencies [[clj-time "0.7.0"]
                  [org.clojure/clojure "1.6.0"]
                  [ring/ring-core "1.3.0"]
+                 [lib-noir "0.8.4"]
                  [org.clojure/data.json "0.2.5"]
                  [org.clojure/tools.logging "0.3.1"]
                  [ring-middleware-format "0.3.2"]
