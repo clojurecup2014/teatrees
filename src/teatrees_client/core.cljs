@@ -18,7 +18,7 @@
 (def app-state
   (atom
     {:game-state :loading
-     :game-field-size {:x 10 :y 10 :z 40}
+     :game-field-size {:x 10 :y 10 :z 30}
      :cell-size 20
      :cell-gap 2
      :game-field []
@@ -213,7 +213,6 @@
                   :y (- (.-innerHeight js/window) 10)}
         [cell-size cell-gap] (calc-cell-size-and-gap game-field-size
                                                      win-size)]
-    (println "doc-size" doc-size "js-size" js-size)
     (om/update! app :cell-size cell-size)
     (om/update! app :cell-gap cell-gap)))
 

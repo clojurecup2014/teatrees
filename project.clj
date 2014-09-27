@@ -30,7 +30,7 @@
   :ring {:handler teatrees.core/app}
   
   :less {:source-paths ["src/assets/less"]
-         :target-path "public/css"}
+         :target-path "resources/public/css"}
   
   :cljsbuild { 
     :builds [{:id "dev"
