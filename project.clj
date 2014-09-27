@@ -36,9 +36,9 @@
     :builds [{:id "dev"
               :source-paths ["src/teatrees_client"]
               :compiler {
-                :output-to "public/js/teatrees.js"
-                :output-dir "public/js"
+                :output-to "resources/public/js/teatrees.js"
+                :output-dir "resources/public/js"
                 :optimizations :none
                 :source-map true}}]}
   :resource {:resource-paths ["vendor"]
-             :target-path "public"})
+             :target-path "resources/public"})
