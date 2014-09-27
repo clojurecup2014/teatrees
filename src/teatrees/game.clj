@@ -10,25 +10,6 @@
 
 ;; TODO: Write figures templates
 
-(defn init-coord
-  ([x y] (init-coord x y 0))
-  ([x y z] (init-coord x y z false))
-  ([x y z f] { :x x :y y :z z :filled f}))
-
-(def fig-square
-  [(init-coord 1 1 0 true)
-   (init-coord 1 2 0 true)
-   (init-coord 2 1 0 true)
-   (init-coord 2 2 0 true)])
-
-(defn can-move? 
-  [field figure dir]
-  (case dir
-    :left 
-    :up
-    :down
-    :right ))
-
 (defn prohibited-fields [f figure] (into #{} (map f figure)))
 
 (defn check-dir 
@@ -52,3 +33,6 @@
       :right (and 
                (check-dir #(assoc % :x (inc (:x %))) figure field)
                (< (:x (apply max-key :x figure)) xb)))))
+
+(defn move
+  [field figure])
