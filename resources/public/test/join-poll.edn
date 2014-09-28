@@ -1,0 +1,4 @@
+{:status :start
+ :player-no 0
+ :players [{:name "Jake"}
+           {:name "Nancy"}]}

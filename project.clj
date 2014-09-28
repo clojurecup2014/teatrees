@@ -19,7 +19,8 @@
                  [org.clojure/clojurescript "0.0-2277"]
                  [org.clojure/core.async "0.1.267.0-0d7780-alpha"]
                  [om "0.7.1"]
-                 [prismatic/om-tools "0.3.2"]]
+                 [prismatic/om-tools "0.3.2"]
+                 [garden "1.2.1"]]
   :plugins [[lein-ring "0.8.11"]
             [lein-cljsbuild "1.0.3"]
             [lein-less "1.7.2"]
@@ -30,15 +31,15 @@
   :ring {:handler teatrees.core/app}
   
   :less {:source-paths ["src/assets/less"]
-         :target-path "public/css"}
+         :target-path "resources/public/css"}
   
   :cljsbuild { 
     :builds [{:id "dev"
               :source-paths ["src/teatrees_client"]
               :compiler {
-                :output-to "public/js/teatrees.js"
-                :output-dir "public/js"
+                :output-to "resources/public/js/teatrees.js"
+                :output-dir "resources/public/js"
                 :optimizations :none
                 :source-map true}}]}
   :resource {:resource-paths ["vendor"]
-             :target-path "public"})
+             :target-path "resources/public"})
