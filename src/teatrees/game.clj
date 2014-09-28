@@ -31,6 +31,7 @@
         (case (cg :state)
           :finished (do
                       (Thread/sleep keep-results)
+                      (log/info "Cleaning game" uuid)
                       (dosync (alter current-games dissoc uuid)))
           :started (do
                      (async/>!! events [:move uuid 1 :bottom])
