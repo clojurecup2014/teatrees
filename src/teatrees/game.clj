@@ -305,7 +305,7 @@
                   new-fig
                   (place-new-fig player))
         new-game (-> game
-                     (assoc :field cleaned-field)
+                     (assoc :field cleansed-field)
                      (assoc-in [:players player :figure] new-fig))]
     (dosync
       (alter current-games assoc uuid game))
