@@ -46,16 +46,21 @@
   (om/update! app :game-state :ended))
 
 (defn update-received [app data timer]
-  (let [{:keys [game-state game-field players border-pos]} data]
-    (if (= game-state :ended)
+  (let [{:keys [state game-field players border-pos]} data]
+    (case state
+      :ended
       (do 
         (.stop timer)
         (end-game app data))
+      :started
       (do
         (om/update! app :game-field game-field)
         (om/update! app :border-pos border-pos)
         (om/transact! app :players
-          #(map merge % players))))))
+          #(map merge % players)))
+      :unknown
+      (do
+        (om/update! app :game-state :unknown)))))
 
 (defn uuid-for-url [uuid]
   (if (symbol? uuid) (name uuid) uuid))
@@ -107,10 +112,12 @@
 (defn send-action [app transform]
   (when (and (= :running (:game-state @app))
              (:uuid @app))
-    (let [op (if (:rotate transform) "rotate" "move")]
+    (let [[op transform-mod] (if (:rotate transform)
+                               ["rotate" (:rotate transform)]
+                               ["move" (set/rename-keys transform {:move :dir})])]
       (edn-xhr {:method :post
-                :url (str "game/" (uuid-for-url (:uuid @app)) "/" op "/" (:player-no @app))
-                :data transform
+                :url (str "game/" (uuid-for-url (:uuid @app)) "/" op "/" (inc (:player-no @app)))
+                :data transform-mod
                 :on-complete identity}))))
 
 ;; =================================
@@ -137,12 +144,12 @@
                :up {:move :up}
                :right {:move :right}
                :down {:move :down}
-               :Q {:rotate {:axis :x :direction -1}}
-               :W {:rotate {:axis :x :direction 1}}
-               :A {:rotate {:axis :y :direction -1}}
-               :S {:rotate {:axis :y :direction 1}}
-               :Z {:rotate {:axis :z :direction -1}}
-               :X {:rotate {:axis :z :direction 1}})]
+               :Q {:rotate {:axis :x :dir -1}}
+               :W {:rotate {:axis :x :dir 1}}
+               :A {:rotate {:axis :y :dir -1}}
+               :S {:rotate {:axis :y :dir 1}}
+               :Z {:rotate {:axis :z :dir -1}}
+               :X {:rotate {:axis :z :dir 1}})]
       {:type :keydown
        :transform transform})))
 

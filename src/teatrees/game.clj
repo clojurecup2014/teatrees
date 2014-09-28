@@ -86,11 +86,11 @@
   [uuid dir player]
   (if (@current-games uuid)
     (do
-      (case player
-        :player1 (when-not (= dir :top)
-                   (async/go (async/>! events [:move uuid player :dir])))
-        :player2 (when-not (= dir :bottom)
-                   (async/go (async/>! events [:move uuid player :dir]))))
+      (case player)
+        "1" (when-not (= dir :top)
+              (async/go (async/>! events [:move uuid player :dir])))
+        "2" (when-not (= dir :bottom)
+              (async/go (async/>! events [:move uuid player :dir])))
       (success "ok"))
     (failure "Game not found" :internal-server-error))) 
 
@@ -167,8 +167,8 @@
   [direction axis figure field player]
   (let [center (second figure)
         [zmin zmax] (case player
-                      :player1 [-1 zborder]
-                      :player2 [zborder z-max])]
+                      "1" [-1 zborder]
+                      "2" [zborder z-max])]
     (if (can-rotate? direction axis figure field zmin zmax)
       (rotate* direction axis figure center)
       figure)))
@@ -227,7 +227,8 @@
 
 
 (async/go-loop []
-  (let [msg (async/alts! [events])]
+  (let [[msg _] (async/alts! [events])]
+    (log/info (first msg))
     (case (first msg)
       :move (log/info "Accepted move message." msg)
       :rotate (log/info "Accepted rotate message." msg)

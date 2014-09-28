@@ -14,7 +14,9 @@
   (GET "/high-scores" [] (gm/high-scores))
   (GET "/game/:uuid/state" [uuid] (gm/field-state uuid))
   (GET "/game/:uuid/await" [uuid] (gm/awaiting-state uuid))
-  (POST "/game/:uuid/move/:player-nm" [uuid player-nm dir] (gm/move uuid dir player-nm))
+  (POST "/game/:uuid/move/:player-nm" [uuid player-nm dir] (gm/move-figure uuid dir player-nm))
+  (POST "/game/:uuid/rotate/:player-nm" [uuid player-nm axis dir]
+        (gm/rotate-figure uuid axis dir player-nm))
   (POST "/join" [name] (gm/try-join name))
 
   (GET "/" [] (resource-response "index.html" {:root "public"}))
