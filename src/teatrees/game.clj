@@ -236,7 +236,7 @@
   (let [shift (calc-shift cell cmp line-vec zb)]
     (shift-cell cell shift op)))
 
-(defn shift-field*
+(defn shift-field
   [dir line-vec field zb]
   (let [[cmp op] (case dir
                   :top [> -]
@@ -300,12 +300,12 @@
         {new-field :field new-fig :figure failed :failed}
           (move dir figure field player)
         no-rows (if new-fig (rows-to-remove new-field new-fig) [])
-        ; new-field (remove-rows new-field no-rows)
+        cleaned-field (shift-field dir no-rows new-field (game :border-pos))
         new-fig (if new-fig
                   new-fig
                   (place-new-fig player))
         new-game (-> game
-                     (assoc :field new-field)
+                     (assoc :field cleaned-field)
                      (assoc-in [:players player :figure] new-fig))]
     (dosync
       (alter current-games assoc uuid game))
