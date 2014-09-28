@@ -28,6 +28,7 @@
             game-new (assoc game-old :player2 name 
                                      :state :started)
             uuid (:uuid game-new)]
+        (log/info "Found room" uuid "Starting...")
         (alter available-games pop)
         (alter current-games conj game-new)
         (alter game-channels assoc uuid (async/chan))
@@ -37,6 +38,7 @@
                  :player2 false 
                  :state :awaiting }]
         (dosync
+          (log/info "Created room" uuid)
           (alter available-games conj gm)
           (success gm))))))
 
