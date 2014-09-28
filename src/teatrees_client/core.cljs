@@ -271,18 +271,32 @@
                                                :cell-gap cell-gap})))))
             (:players app)))))))
 
-(defcomponent player-info [player owner]
+(defcomponent player-info [{:keys [player player-no]} owner]
   (render [_]
     (let [{:keys [name score]} player]
-      (dom/div {:class "player-info"}
+      (dom/div {:class (str "player-info player-info-" (inc player-no))}
         name
         (dom/br nil)
         (str "Score: " score)))))
 
+(def control-help
+  (dom/dl
+    (flatten 
+      (for [[k1 k2 desc] [["Left" "Right" "Move on X axis"]
+                          ["Up" "Down" "Move on Y axis"]
+                          ["Q" "W" "Rotate around X axis"]
+                          ["A" "S" "Rotate around Y axis"]
+                          ["Z" "X" "Rotate around Z axis"]]]
+        [(dom/dt
+           (dom/kbd k1)
+           "/"
+           (dom/kbd k2))
+         (dom/dd desc)]))))
+
 (defcomponent game-field [app owner {:keys [ch] :as opts}]
   (render [_]
     (let [views [:top :left :front :bottom]
-          {:keys [game-field game-field-size]} app]
+          {:keys [game-field game-field-size player-no]} app]
       (dom/div {:class "container-fluid"
                 :id "tetris"
                 :ref "tetris"}
@@ -293,9 +307,13 @@
         (dom/div {:class "row game-field"}
           (for [view views]
             (dom/div {:class (str "col-xs-3 game-view" (when (= view :bottom) " game-view-bottom"))}
-              (when (= view :bottom) (om/build player-info (-> app :players second)))
+              (when (= view :bottom)
+                [(om/build player-info {:player (-> app :players second) :player-no 1})
+                 (when (= player-no 1) control-help)])
               (om/build game-field-view app {:opts {:view view}})
-              (when (= view :top) (om/build player-info (-> app :players first))))))))))
+              (when (= view :top)
+                [(om/build player-info {:player (-> app :players first) :player-no 0})
+                 (when (= player-no 0) control-help)]))))))))
 
 (defn calc-cell-size-and-gap [field-size window-size]
   (let [min-x (/ (:x window-size) 4 (:x field-size))
@@ -310,7 +328,7 @@
 (defn window-resized [app owner]
   (let [{:keys [game-field-size]} (om/value app)
         win-size {:x (- (.-innerWidth js/window) 20)
-                  :y (- (.-innerHeight js/window) 20)}
+                  :y (- (.-innerHeight js/window) 70)}
         [cell-size cell-gap] (calc-cell-size-and-gap game-field-size
                                                      win-size)]
     (om/update! app :cell-size cell-size)

@@ -27,9 +27,16 @@
 }
 
 .player-info {
-  margin-top: 2em;
-  margin-bottom: 2em;
+  margin: 0.5em;
   font-size: 1.5em;
+}
+
+.player-info-1 {
+  color: #95b9d3;;
+}
+
+.player-info-2 {
+  color: #e1a49e;;
 }
 
 .view-bg-player1 {
