@@ -129,6 +129,7 @@
    38 :up
    39 :right
    40 :down
+   32 :space
    65 :A
    81 :Q
    83 :S
@@ -144,6 +145,7 @@
                :up {:move :up}
                :right {:move :right}
                :down {:move :down}
+               :space {:move :fall}
                :Q {:rotate {:axis :x :dir -1}}
                :W {:rotate {:axis :x :dir 1}}
                :A {:rotate {:axis :y :dir -1}}
@@ -162,12 +164,12 @@
 ;; Presentation
 
 (def view-defs
-  {:front {:dims [:x :z :y] :dirs [1 -1 1]}
-   :back {:dims [:x :z :y] :dirs [-1 -1 -1]}
-   :left {:dims [:y :z :x] :dirs [-1 -1 1]}
-   :right {:dims [:y :z :x] :dirs [1 -1 -1]}
+  {:front {:dims [:x :z :y] :dirs [1 1 1]}
+   :back {:dims [:x :z :y] :dirs [-1 1 -1]}
+   :left {:dims [:y :z :x] :dirs [-1 1 1]}
+   :right {:dims [:y :z :x] :dirs [1 1 -1]}
    :top {:dims [:x :y :z] :dirs [1 -1 -1]}
-   :bottom {:dims [:x :y :z] :dirs [1 1 1]}})
+   :bottom {:dims [:x :y :z] :dirs [1 -1 1]}})
 
 (defn view-visible-dims [view]
   (->> view-defs view :dims (take 2)))
@@ -238,8 +240,12 @@
 
 (defcomponent game-field-view [app owner {:keys [view] :as opts}]
   (render [_]
-    (let [{:keys [game-field game-field-size cell-size cell-gap]} app
-          proj (project-game-field game-field game-field-size view)
+    (let [{:keys [game-field game-field-size cell-size cell-gap border-pos]} app
+          actual-field (case view
+                         :bottom (filter #(>= (:z %) border-pos) game-field)
+                         :top (filter #(<= (:z %) border-pos) game-field)
+                         game-field)
+          proj (project-game-field actual-field game-field-size view)
           conv (coord-converter cell-size cell-gap)
           visible-dims (view-visible-dims view)
           view-size (map game-field-size visible-dims)
