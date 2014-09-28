@@ -286,13 +286,15 @@
     (flatten 
       (for [[k1 k2 desc] [["Left" "Right" "Move on X axis"]
                           ["Up" "Down" "Move on Y axis"]
+                          ["Space" nil "Fall"]
                           ["Q" "W" "Rotate around X axis"]
                           ["A" "S" "Rotate around Y axis"]
                           ["Z" "X" "Rotate around Z axis"]]]
         [(dom/dt
            (dom/kbd k1)
-           "/"
-           (dom/kbd k2))
+           (when k2
+             "/"
+             (dom/kbd k2)))
          (dom/dd desc)]))))
 
 (defcomponent game-field [app owner {:keys [ch] :as opts}]
