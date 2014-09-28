@@ -11,15 +11,25 @@
   stroke: red;
 }
 
-.game-field {
-  display: table !important;
-  table-layout: fixed;
+.header-row {
+  text-align: center;
 }
 
 .game-view {
-  display: table-cell;
-  vertical-align :middle;
+  display: inline-block;
+  vertical-align: top;
   text-align: center;
+  float: none;
+}
+
+.game-view-bottom {
+  vertical-align: bottom;
+}
+
+.player-info {
+  margin-top: 2em;
+  margin-bottom: 2em;
+  font-size: 1.5em;
 }
 
 .view-bg-player1 {
