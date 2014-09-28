@@ -1,6 +1,7 @@
 (ns teatrees.game
   (:require [clojure.tools.logging :as log]
-            [clojure.core.async :as async]))
+            [clojure.core.async :as async]
+            [clj-time.core :refer [before? now ago minutes]]))
 
 (def x-max 10)
 (def y-max 10)
@@ -26,7 +27,8 @@
     (if (> (count @available-games) 0)
       (let [game-old (peek @available-games)
             game-new (assoc game-old :player2 name 
-                                     :state :started)
+                                     :state :started
+                                     :time (now))
             uuid (:uuid game-new)]
         (log/info "Found room" uuid "Starting...")
         (alter available-games pop)
@@ -36,9 +38,9 @@
       (let [gm { :uuid (make-uuid) 
                  :player1 name 
                  :player2 false 
-                 :state :awaiting }]
+                 :state :awaiting}]
         (dosync
-          (log/info "Created room" uuid)
+          (log/info "Created room" (gm :uuid))
           (alter available-games conj gm)
           (success gm))))))
 
@@ -62,9 +64,80 @@
   [uuid dir playernm]
   (if-let [ch (@game-channels uuid)]
     ()
-    (failure "Game not found" :internal-server-error)))
+    (failure "Game not found" :internal-server-error))) 
 
 ;; Game implementation
+
+(def square [{ :x 0, :y 0, :z 0 }
+             { :x 0, :y 1, :z 0 } 
+             { :x 1, :y 0, :z 0 }
+             { :x 1, :y 1, :z 0 }])
+
+(def line   [{ :x -1, :y 0, :z 0 }
+             { :x 0, :y 0, :z 0 } 
+             { :x 1, :y 0, :z 0 }
+             { :x 2, :y 0, :z 0 }])
+
+(def arrow  [{ :x -1, :y 0, :z 0 }
+             { :x 0, :y 0, :z 0 } 
+             { :x 0, :y 1, :z 0 }
+             { :x 1, :y 0, :z 0 }])
+
+(def angle-l [{ :x -1, :y 1, :z 0 }
+              { :x -1, :y 0, :z 0 } 
+              { :x 0, :y 0, :z 0 }
+              { :x 1, :y 0, :z 0 }])
+
+(def angle-r [{ :x -1, :y 0, :z 0 }
+              { :x 0, :y 0, :z 0 } 
+              { :x 1, :y 0, :z 0 }
+              { :x 1, :y 1, :z 0 }])
+
+(def snake-l [{ :x -1, :y 0, :z 0 }
+              { :x 0, :y 0, :z 0 } 
+              { :x 0, :y 1, :z 0 }
+              { :x 1, :y 1, :z 0 }])
+
+(def snake-r [{ :x -1, :y 1, :z 0 }
+              { :x 0, :y 1, :z 0 } 
+              { :x 0, :y 0, :z 0 }
+              { :x 1, :y 0, :z 0 }])
+
+(def figures [square line arrow angle-l angle-r snake-l angle-r])
+
+(defn rotate-figure* [direction axis figure center]
+  (let [rest-axes (remove #{axis} [:x :y :z])
+        rot-fn (case direction
+                 :cw (fn [[x y]] [y (- x)])
+                 :ccw (fn [[x y]] [(- y) x]))]
+    (for [cell figure
+          :let [norm-cell (merge-with - cell center)
+                rot-vals (map norm-cell rest-axes)
+                rotated-vals (rot-fn rot-vals)
+                rotated-cell (merge norm-cell
+                                    (apply hash-map (interleave rest-axes rotated-vals)))
+                new-cell (merge-with + rotated-cell center)]]
+      new-cell)))
+
+(defn can-rotate?
+  [dir axis figure field zmin zmax]
+  (let [center (second figure)
+        prohibited (into #{} (rotate-figure* figure center axis dir))]
+    (and 
+      (nil? (some prohibited field))
+      (every? #(and (> % -1) (< % x-max)) (map :x prohibited))
+      (every? #(and (> % -1) (< % y-max)) (map :y prohibited))
+      (every? #(and (> % zmin) (< % z-max)) (map :z prohibited)))))
+
+(defn rotate-figure
+  [direction axis figure field player]
+  (let [center (second figure)
+        [zmin zmax] (case player
+                      :player1 [-1 zborder]
+                      :player2 [zborder z-max])]
+    (if (can-rotate? direction axis figure field zmin zmax)
+      (rotate-figure* direction axis figure center)
+      figure)))
 
 (defn prohibited-fields [f figure] (into #{} (map f figure)))
 
