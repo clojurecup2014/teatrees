@@ -223,7 +223,7 @@
       (dosync
         (alter current-games assoc-in [uuid :players pl :figure] rotated)))))
 
-(defn- calc-shift
+(defn- calc-shift-clean
   [cell cmp line-vec zb]
   (count (filter #(cmp (cell :z) % zb) line-vec)))
 
@@ -233,10 +233,10 @@
 
 (defn- calc-and-shift
   [cell cmp line-vec zb op]
-  (let [shift (calc-shift cell cmp line-vec zb)]
+  (let [shift (calc-shift-clean cell cmp line-vec zb)]
     (shift-cell cell shift op)))
 
-(defn shift-field
+(defn cleanise-field
   [dir line-vec field zb]
   (let [[cmp op] (case dir
                   :top [> -]
@@ -300,7 +300,7 @@
         {new-field :field new-fig :figure failed :failed}
           (move dir figure field player)
         no-rows (if new-fig (rows-to-remove new-field new-fig) [])
-        cleaned-field (shift-field dir no-rows new-field (game :border-pos))
+        cleansed-field (cleanise-field dir no-rows new-field (game :border-pos))
         new-fig (if new-fig
                   new-fig
                   (place-new-fig player))
