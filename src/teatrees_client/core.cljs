@@ -230,7 +230,7 @@
                   :width width-px
                   :height height-px})]))
 
-(defcomponent game-field-view [app owner {:keys [ch view] :as opts}]
+(defcomponent game-field-view [app owner {:keys [view] :as opts}]
   (render [_]
     (let [{:keys [game-field game-field-size cell-size cell-gap]} app
           proj (project-game-field game-field game-field-size view)
@@ -238,43 +238,54 @@
           visible-dims (view-visible-dims view)
           view-size (map game-field-size visible-dims)
           [width-px height-px] (map #(- (conv %) cell-gap) view-size)]
-      (dom/div {:class "col-xs-3 game-view"}
-        (dom/h3 (-> view name str/capitalize))
-        (dom/svg {:width width-px
-                  :height height-px}
-          (bg-for-view view width-px height-px conv (:border-pos app) cell-size cell-gap)
-          (for [cell proj]
-            (om/build game-field-cell {:cell cell
-                                       :conv conv
-                                       :cell-size cell-size
-                                       :cell-gap cell-gap}))
-          (flatten 
-            (map-indexed
-              (fn [idx player]
-                (let [fig (:fig player)
-                      proj-fig (project-game-field fig game-field-size view)]
-                  (if (or (and (= view :top) (= idx 0))
-                          (and (= view :bottom) (= idx 1))
-                          (not (view #{:top :bottom})))
-                    (for [cell proj-fig]
-                      (om/build game-field-cell {:cell cell
-                                                 :conv conv
-                                                 :cell-size cell-size
-                                                 :cell-gap cell-gap})))))
-              (:players app))))))))
+      (dom/svg {:width width-px
+                :height height-px}
+        (bg-for-view view width-px height-px conv (:border-pos app) cell-size cell-gap)
+        (for [cell proj]
+          (om/build game-field-cell {:cell cell
+                                     :conv conv
+                                     :cell-size cell-size
+                                     :cell-gap cell-gap}))
+        (flatten 
+          (map-indexed
+            (fn [idx player]
+              (let [fig (:fig player)
+                    proj-fig (project-game-field fig game-field-size view)]
+                (if (or (and (= view :top) (= idx 0))
+                        (and (= view :bottom) (= idx 1))
+                        (not (view #{:top :bottom})))
+                  (for [cell proj-fig]
+                    (om/build game-field-cell {:cell cell
+                                               :conv conv
+                                               :cell-size cell-size
+                                               :cell-gap cell-gap})))))
+            (:players app)))))))
+
+(defcomponent player-info [player owner]
+  (render [_]
+    (let [{:keys [name score]} player]
+      (dom/div {:class "player-info"}
+        name
+        (dom/br nil)
+        (str "Score: " score)))))
 
 (defcomponent game-field [app owner {:keys [ch] :as opts}]
   (render [_]
-    (let [views [:top :left :front]
+    (let [views [:top :left :front :bottom]
           {:keys [game-field game-field-size]} app]
       (dom/div {:class "container-fluid"
                 :id "tetris"
                 :ref "tetris"}
+        (dom/div {:class "row header-row"}
+          (for [view views]
+            (dom/div {:class "col-xs-3"}
+              (dom/h3 (-> view name str/capitalize)))))
         (dom/div {:class "row game-field"}
-          (om/build game-field-view app {:opts {:view :top}})
-          (om/build game-field-view app {:opts {:view :left}})
-          (om/build game-field-view app {:opts {:view :front}})
-          (om/build game-field-view app {:opts {:view :bottom}}))))))
+          (for [view views]
+            (dom/div {:class (str "col-xs-3 game-view" (when (= view :bottom) " game-view-bottom"))}
+              (when (= view :bottom) (om/build player-info (-> app :players second)))
+              (om/build game-field-view app {:opts {:view view}})
+              (when (= view :top) (om/build player-info (-> app :players first))))))))))
 
 (defn calc-cell-size-and-gap [field-size window-size]
   (let [min-x (/ (:x window-size) 4 (:x field-size))
