@@ -115,46 +115,42 @@
 
 ;; Game implementation
 
-; (def square [{ :x 0, :y 0, :z 0 }
-;              { :x 0, :y 1, :z 0 } 
-;              { :x 1, :y 0, :z 0 }
-;              { :x 1, :y 1, :z 0 }])
+(def square [{ :x 0, :y 0, :z 0 }
+             { :x 0, :y 1, :z 0 } 
+             { :x 1, :y 0, :z 0 }
+             { :x 1, :y 1, :z 0 }])
 
-; (def line   [{ :x -1, :y 0, :z 0 }
-;              { :x 0, :y 0, :z 0 } 
-;              { :x 1, :y 0, :z 0 }
-;              { :x 2, :y 0, :z 0 }])
+(def line   [{ :x -1, :y 0, :z 0 }
+             { :x 0, :y 0, :z 0 } 
+             { :x 1, :y 0, :z 0 }
+             { :x 2, :y 0, :z 0 }])
 
-; (def arrow  [{ :x -1, :y 0, :z 0 }
-;              { :x 0, :y 0, :z 0 } 
-;              { :x 0, :y 1, :z 0 }
-;              { :x 1, :y 0, :z 0 }])
+(def arrow  [{ :x -1, :y 0, :z 0 }
+             { :x 0, :y 0, :z 0 } 
+             { :x 0, :y 1, :z 0 }
+             { :x 1, :y 0, :z 0 }])
 
-; (def angle-l [{ :x -1, :y 1, :z 0 }
-;               { :x -1, :y 0, :z 0 } 
-;               { :x 0, :y 0, :z 0 }
-;               { :x 1, :y 0, :z 0 }])
+(def angle-l [{ :x -1, :y 1, :z 0 }
+              { :x -1, :y 0, :z 0 } 
+              { :x 0, :y 0, :z 0 }
+              { :x 1, :y 0, :z 0 }])
 
-; (def angle-r [{ :x -1, :y 0, :z 0 }
-;               { :x 0, :y 0, :z 0 } 
-;               { :x 1, :y 0, :z 0 }
-;               { :x 1, :y 1, :z 0 }])
+(def angle-r [{ :x -1, :y 0, :z 0 }
+              { :x 0, :y 0, :z 0 } 
+              { :x 1, :y 0, :z 0 }
+              { :x 1, :y 1, :z 0 }])
 
-; (def snake-l [{ :x -1, :y 0, :z 0 }
-;               { :x 0, :y 0, :z 0 } 
-;               { :x 0, :y 1, :z 0 }
-;               { :x 1, :y 1, :z 0 }])
+(def snake-l [{ :x -1, :y 0, :z 0 }
+              { :x 0, :y 0, :z 0 } 
+              { :x 0, :y 1, :z 0 }
+              { :x 1, :y 1, :z 0 }])
 
-; (def snake-r [{ :x -1, :y 1, :z 0 }
-;               { :x 0, :y 1, :z 0 } 
-;               { :x 0, :y 0, :z 0 }
-;               { :x 1, :y 0, :z 0 }])
+(def snake-r [{ :x -1, :y 1, :z 0 }
+              { :x 0, :y 1, :z 0 } 
+              { :x 0, :y 0, :z 0 }
+              { :x 1, :y 0, :z 0 }])
 
-; (def figures [square line arrow angle-l angle-r snake-l angle-r])
-
-(def figures [(for [x (range 0 x-max)
-                    y (range 0 y-max)]
-              {:x x :y y :z 0})])
+(def figures [square line arrow angle-l angle-r snake-l angle-r])
 
 (defn rotate* [direction axis figure center]
   (let [rest-axes (remove #{axis} [:x :y :z])
