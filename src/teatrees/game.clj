@@ -33,8 +33,8 @@
                       (Thread/sleep keep-results)
                       (dosync (alter current-games dissoc uuid)))
           :started (do
-                     (async/>!! events [:move uuid "1" :bottom])
-                     (async/>!! events [:move uuid "2" :top])
+                     (async/>!! events [:move uuid 1 :bottom])
+                     (async/>!! events [:move uuid 2 :top])
                      (Thread/sleep rate)
                      (recur)))))))
 
