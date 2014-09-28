@@ -73,17 +73,17 @@
   (if (@current-games uuid)
     (do
       (case player
-        :player1 (when-not (= dir :top)
-                   (async/go (async/>! events [:move uuid playernm :dir])))
-        :player2 (when-not (= dir :bottom)
-                   (async/go (async/>! events [:move uuid playernm :dir]))))
+        "1" (when-not (= dir :top)
+              (async/go (async/>! events [:move uuid player :dir])))
+        "2" (when-not (= dir :bottom)
+              (async/go (async/>! events [:move uuid player :dir]))))
       (success "ok"))
     (failure "Game not found" :internal-server-error))) 
 
 (defn rotate-figure
   [uuid dir axis player]
   (if (@current-games uuid)
-    (async/go (>! eve))
+    (async/go (async/>! events [uuid dir axis player]))
     (failure "Game not found" :internal-server-error)))
 
 ;; Game implementation
@@ -153,8 +153,8 @@
   [direction axis figure field player]
   (let [center (second figure)
         [zmin zmax] (case player
-                      :player1 [-1 zborder]
-                      :player2 [zborder z-max])]
+                      "1" [-1 zborder]
+                      "2" [zborder z-max])]
     (if (can-rotate? direction axis figure field zmin zmax)
       (rotate* direction axis figure center)
       figure)))
