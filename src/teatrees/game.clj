@@ -8,7 +8,7 @@
 (def z-max 21)
 (def zborder 10)
 
-(def rate 1000)
+(def rate 3000)
 (def keep-results (* 60 1000))
 
 (def available-games (ref (clojure.lang.PersistentQueue/EMPTY)))
@@ -106,7 +106,7 @@
     (failure "Game not found" :internal-server-error))) 
 
 (defn rotate-figure
-  [uuid dir axis player]
+  [uuid axis dir player]
   (if (@current-games uuid)
     (async/go (async/>! events [:rotate uuid dir axis player]))
     (failure "Game not found" :internal-server-error)))
@@ -153,8 +153,8 @@
 (defn rotate* [direction axis figure center]
   (let [rest-axes (remove #{axis} [:x :y :z])
         rot-fn (case direction
-                 :cw (fn [[x y]] [y (- x)])
-                 :ccw (fn [[x y]] [(- y) x]))]
+                 1 (fn [[x y]] [y (- x)])
+                 -1 (fn [[x y]] [(- y) x]))]
     (for [cell figure
           :let [norm-cell (merge-with - cell center)
                 rot-vals (map norm-cell rest-axes)
@@ -167,12 +167,12 @@
 (defn can-rotate?
   [dir axis figure field zmin zmax]
   (let [center (second figure)
-        prohibited (into #{} (rotate* figure center axis dir))]
+        prohibited (into #{} (rotate* dir axis figure center))]
     (and 
       (nil? (some prohibited field))
       (every? #(and (> % -1) (< % x-max)) (map :x prohibited))
       (every? #(and (> % -1) (< % y-max)) (map :y prohibited))
-      (every? #(and (> % zmin) (< % z-max)) (map :z prohibited)))))
+      (every? #(and (> % zmin) (< % zmax)) (map :z prohibited)))))
 
 (defn rotate
   [direction axis figure field player]
@@ -188,7 +188,6 @@
 
 (defn check-dir 
   [f figure field]
-  
   (nil? (some (prohibited-fields f figure) field)))
 
 (defn can-move?
@@ -220,11 +219,11 @@
   [uuid dir axis player]
   (when-let [cg (@current-games uuid)]
     (let [pl (dec (Integer/parseInt player))
-          fig ((:players cg) pl)
+          fig (get-in cg [:players pl :fig])
           field (cg :field)
           rotated (rotate dir axis fig field player)]
       (dosync
-        (alter current-games assoc-in [uuid :players pl :figure] rotated)))))
+        (alter current-games assoc-in [uuid :players pl :fig] rotated)))))
 
 (defn- calc-shift-clean
   [cell cmp line-vec zb]
@@ -295,22 +294,37 @@
       :else
         {:field field :figure figure})))
 
+(defn fall
+  [field figure player zborder]
+  (let [dir (if (= player 1) :bottom :top)]
+    (loop [field field
+           figure figure]
+      (let [{new-field :field new-fig :figure :as mv-state} (move dir figure field player zborder)]
+        (if new-fig
+          (recur new-field new-fig)
+          mv-state)))))
+
 (defn move!
   [uuid player dir]
   (let [{:keys [field border-pos] :as game} (@current-games uuid)
         figure (get-in game [:players (dec player) :fig])
         {new-field :field new-fig :figure failed :failed}
-          (move dir figure field player border-pos)
+          (if (= dir :fall)
+            (fall field figure player border-pos)
+            (move dir figure field player border-pos))
         no-rows (if new-fig (rows-to-remove new-field new-fig) [])
         cleanise-dir (if (= player 1) :bottom :top)
         cleansed-field (cleanise-field cleanise-dir no-rows new-field (game :border-pos))
+        new-border (+ border-pos (* (count no-rows) (if (= player 1) -1 1)))
+        score (* (count no-rows) x-max y-max)
         new-fig (if new-fig
                   new-fig
                   (place-new-fig player))
         new-game (-> game
                    (assoc :field cleansed-field)
+                   (assoc :border-pos new-border)
+                   (update-in [:players (dec player) :score] + score)
                    (assoc-in [:players (dec player) :fig] new-fig))]
-    (log/info "Moved fig " figure " to " new-fig)
     (dosync
       (alter current-games assoc uuid new-game))
     (when failed
