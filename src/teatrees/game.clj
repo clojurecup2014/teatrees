@@ -8,7 +8,7 @@
 (def z-max 21)
 (def zborder 10)
 
-(def rate 1000)
+(def rate 3000)
 (def keep-results (* 60 1000))
 
 (def available-games (ref (clojure.lang.PersistentQueue/EMPTY)))
@@ -106,9 +106,11 @@
     (failure "Game not found" :internal-server-error))) 
 
 (defn rotate-figure
-  [uuid dir axis player]
+  [uuid axis dir player]
   (if (@current-games uuid)
-    (async/go (async/>! events [:rotate uuid dir axis player]))
+    (do
+      (async/go (async/>! events [:rotate uuid dir axis player]))
+      (success "ok"))
     (failure "Game not found" :internal-server-error)))
 
 ;; Game implementation
@@ -153,8 +155,8 @@
 (defn rotate* [direction axis figure center]
   (let [rest-axes (remove #{axis} [:x :y :z])
         rot-fn (case direction
-                 :cw (fn [[x y]] [y (- x)])
-                 :ccw (fn [[x y]] [(- y) x]))]
+                 1 (fn [[x y]] [y (- x)])
+                 -1 (fn [[x y]] [(- y) x]))]
     (for [cell figure
           :let [norm-cell (merge-with - cell center)
                 rot-vals (map norm-cell rest-axes)
@@ -167,12 +169,12 @@
 (defn can-rotate?
   [dir axis figure field zmin zmax]
   (let [center (second figure)
-        prohibited (into #{} (rotate* figure center axis dir))]
+        prohibited (into #{} (rotate* dir axis figure center))]
     (and 
       (nil? (some prohibited field))
       (every? #(and (> % -1) (< % x-max)) (map :x prohibited))
       (every? #(and (> % -1) (< % y-max)) (map :y prohibited))
-      (every? #(and (> % zmin) (< % z-max)) (map :z prohibited)))))
+      (every? #(and (> % zmin) (< % zmax)) (map :z prohibited)))))
 
 (defn rotate
   [direction axis figure field player]
@@ -188,7 +190,6 @@
 
 (defn check-dir 
   [f figure field]
-  
   (nil? (some (prohibited-fields f figure) field)))
 
 (defn can-move?
@@ -220,11 +221,11 @@
   [uuid dir axis player]
   (when-let [cg (@current-games uuid)]
     (let [pl (dec (Integer/parseInt player))
-          fig ((:players cg) pl)
+          fig (get-in cg [:players pl :fig])
           field (cg :field)
           rotated (rotate dir axis fig field player)]
       (dosync
-        (alter current-games assoc-in [uuid :players pl :figure] rotated)))))
+        (alter current-games assoc-in [uuid :players pl :fig] rotated)))))
 
 (defn- calc-shift-clean
   [cell cmp line-vec zb]
@@ -243,8 +244,13 @@
   [dir line-vec field zb]
   (let [[cmp op] (case dir
                   :top [> -]
-                  :bottom [< +])]
-    (map #(calc-and-shift % cmp line-vec zb op) field)))
+                  :bottom [< +])
+        line-set (into #{} line-vec)]
+    (log/info "Cleanse called")
+    (log/info (remove #(line-set (:z %)) field)
+    (->> field
+      (remove #(line-set (:z %)))
+      (map #(calc-and-shift % cmp line-vec zb op))))))
 
 (defn place-new-fig
   [player]
@@ -263,11 +269,12 @@
 
 (defn rows-to-remove
   [field figure]
-  (->> figure
-       (map :z)
-       set
-       sort
-       (filter #(row-is-full? field %))))
+  (let [result (->> figure
+                 (map :z)
+                 set
+                 sort
+                 (filter #(row-is-full? field %)))]
+    result))
 
 (defn fig-at-start?
   [figure player]
@@ -319,10 +326,12 @@
           (if (= dir :fall)
             (fall field figure player border-pos)
             (move dir figure field player border-pos))
-        no-rows (if new-fig (rows-to-remove new-field new-fig) [])
+        no-rows (if new-fig [] (rows-to-remove new-field figure))
         cleanise-dir (if (= player 1) :bottom :top)
-        cleansed-field (cleanise-field cleanise-dir no-rows new-field (game :border-pos))
-        new-border (+ border-pos (* (count no-rows) (if (= player 1) -1 1)))
+        cleansed-field (if (seq no-rows)
+                         (cleanise-field cleanise-dir no-rows new-field (game :border-pos))
+                         new-field)
+        new-border (+ border-pos (* (count no-rows) (if (= player 1) 1 -1)))
         score (if new-fig 0 (count figure))
         new-fig (if new-fig
                   new-fig
@@ -348,11 +357,9 @@
     (log/info action)
     (case action
       :move (let [[uuid player dir] msg]
-              (log/info "Accepted move message." msg)
               (move! uuid player dir))
       :rotate (apply call-rotate! msg)
       :placed (log/info "Accepted placed message." msg)
-      ;; :destroyed (apply shift-field* msg) ;; expects [uuid line-vec player]
       :finished (let [[uuid player] msg]
                   (log/info "Accepted finished message." msg)
                   (finish! uuid player))))
