@@ -8,7 +8,7 @@
 (def z-max 21)
 (def zborder 10)
 
-(def rate 3000)
+(def rate 2000)
 (def keep-results (* 60 1000))
 
 (def available-games (ref (clojure.lang.PersistentQueue/EMPTY)))

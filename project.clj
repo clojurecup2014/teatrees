@@ -1,7 +1,7 @@
 (defproject teatrees "0.1.0"
   :description "3d tetris"
   :url ""
-  :license {:name "EULA"
+  :license {:name "Eclipse Public License 1.0"
             :url ""}
   :dependencies [[clj-time "0.7.0"]
                  [org.clojure/clojure "1.6.0"]
