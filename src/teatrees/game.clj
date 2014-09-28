@@ -28,6 +28,7 @@
   (future
     (loop []
       (when-let [cg (@current-games uuid)]
+        (Thread/sleep rate)
         (case (cg :state)
           :finished (do
                       (Thread/sleep keep-results)
@@ -36,7 +37,6 @@
           :started (do
                      (async/>!! events [:move uuid 1 :bottom])
                      (async/>!! events [:move uuid 2 :top])
-                     (Thread/sleep rate)
                      (recur)))))))
 
 (defn make-uuid [] (str (java.util.UUID/randomUUID)))
