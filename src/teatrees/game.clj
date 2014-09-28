@@ -302,7 +302,8 @@
         {new-field :field new-fig :figure failed :failed}
           (move dir figure field player border-pos)
         no-rows (if new-fig (rows-to-remove new-field new-fig) [])
-        cleansed-field (cleanise-field dir no-rows new-field (game :border-pos))
+        cleanise-dir (if (= player 1) :bottom :top)
+        cleansed-field (cleanise-field cleanise-dir no-rows new-field (game :border-pos))
         new-fig (if new-fig
                   new-fig
                   (place-new-fig player))
