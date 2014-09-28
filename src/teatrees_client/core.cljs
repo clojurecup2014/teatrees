@@ -73,7 +73,7 @@
 (defn start-game [app {:keys [players player-no] :as data}]
   (om/update! app :game-state :running)
   (om/update! app :players players)
-  (let [timer (goog.Timer. 1000)]
+  (let [timer (goog.Timer. 500)]
     (.start timer)
     (events/listen timer goog.Timer/TICK #(game-poll app timer))))
 
