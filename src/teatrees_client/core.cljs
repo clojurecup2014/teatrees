@@ -57,9 +57,12 @@
         (om/transact! app :players
           #(map merge % players))))))
 
+(defn uuid-for-url [uuid]
+  (if (symbol? uuid) (name uuid) uuid))
+
 (defn game-poll [app timer]
   (edn-xhr {:method :get
-            :url (str "game/" (:uuid @app) "/state")
+            :url (str "game/" (uuid-for-url (:uuid @app)) "/state")
             :on-complete #(update-received app % timer)}))
 
 (defn start-game [app {:keys [players player-no] :as data}]
@@ -72,10 +75,10 @@
 
 (defn wait-poll [app timer]
   (edn-xhr {:method :get
-            :url (str "game/" (:uuid @app) "/wait")
+            :url (str "game/" (uuid-for-url (:uuid @app)) "/wait")
             :on-complete
               (fn [{:keys [status] :as data}]
-                (when (= status :start)
+                (when (= status :started)
                   (.stop timer)
                   (start-game app data)))}))
 
@@ -90,28 +93,13 @@
 
 (defn start-or-wait [app data]
   (om/update! app :uuid (:uuid data))
-  (case (:status data) 
-    :wait (wait-for-start app)
-    :start (start-game app data)))
-
-(defn try-join-game-test [app name]
-  (start-or-wait app
-                 {:status :start
-                  :uuid 1
-                  :update {:game-field [{:id 0 :x 0 :y 0 :z 0}
-                                        {:id 1 :x 0 :y 1 :z 0}
-                                        {:id 2 :x 1 :y 1 :z 0}
-                                        {:id 3 :x 1 :y 1 :z 1}]
-                           :players [{:name "Player 1"
-                                      :score 0
-                                      :figure [{:id 10 :x 5 :y 5 :z 38}
-                                               {:id 11 :x 5 :y 5 :z 39}
-                                               {:id 12 :x 6 :y 5 :z 39}
-                                               {:id 13 :x 5 :y 5 :z 37}]}]}}))
+  (case (:state data) 
+    :awaiting (wait-for-start app)
+    :started (start-game app data)))
 
 (defn try-join-game [app name]
   (om/update! app :player-name name)
-  (edn-xhr {:method :get
+  (edn-xhr {:method :post
             :url "join"
             :data {:name name}
             :on-complete #(start-or-wait app %)}))
@@ -120,7 +108,7 @@
   (when (and (= :running (:game-state @app))
              (:uuid @app))
     (edn-xhr {:method :get
-              :url (str "game/" (:uuid @app) "/move")
+              :url (str "game/" (uuid-for-url (:uuid @app)) "/move")
               :data {:player-no (:player-no @app) :transform transform}
               :on-complete identity})))
 
@@ -271,18 +259,32 @@
                                                :cell-gap cell-gap})))))
             (:players app)))))))
 
-(defcomponent player-info [player owner]
+(defcomponent player-info [{:keys [player player-no]} owner]
   (render [_]
     (let [{:keys [name score]} player]
-      (dom/div {:class "player-info"}
+      (dom/div {:class (str "player-info player-info-" (inc player-no))}
         name
         (dom/br nil)
         (str "Score: " score)))))
 
+(def control-help
+  (dom/dl
+    (flatten 
+      (for [[k1 k2 desc] [["Left" "Right" "Move on X axis"]
+                          ["Up" "Down" "Move on Y axis"]
+                          ["Q" "W" "Rotate around X axis"]
+                          ["A" "S" "Rotate around Y axis"]
+                          ["Z" "X" "Rotate around Z axis"]]]
+        [(dom/dt
+           (dom/kbd k1)
+           "/"
+           (dom/kbd k2))
+         (dom/dd desc)]))))
+
 (defcomponent game-field [app owner {:keys [ch] :as opts}]
   (render [_]
     (let [views [:top :left :front :bottom]
-          {:keys [game-field game-field-size]} app]
+          {:keys [game-field game-field-size player-no]} app]
       (dom/div {:class "container-fluid"
                 :id "tetris"
                 :ref "tetris"}
@@ -293,9 +295,13 @@
         (dom/div {:class "row game-field"}
           (for [view views]
             (dom/div {:class (str "col-xs-3 game-view" (when (= view :bottom) " game-view-bottom"))}
-              (when (= view :bottom) (om/build player-info (-> app :players second)))
+              (when (= view :bottom)
+                [(om/build player-info {:player (-> app :players second) :player-no 1})
+                 (when (= player-no 1) control-help)])
               (om/build game-field-view app {:opts {:view view}})
-              (when (= view :top) (om/build player-info (-> app :players first))))))))))
+              (when (= view :top)
+                [(om/build player-info {:player (-> app :players first) :player-no 0})
+                 (when (= player-no 0) control-help)]))))))))
 
 (defn calc-cell-size-and-gap [field-size window-size]
   (let [min-x (/ (:x window-size) 4 (:x field-size))
@@ -310,7 +316,7 @@
 (defn window-resized [app owner]
   (let [{:keys [game-field-size]} (om/value app)
         win-size {:x (- (.-innerWidth js/window) 20)
-                  :y (- (.-innerHeight js/window) 20)}
+                  :y (- (.-innerHeight js/window) 70)}
         [cell-size cell-gap] (calc-cell-size-and-gap game-field-size
                                                      win-size)]
     (om/update! app :cell-size cell-size)

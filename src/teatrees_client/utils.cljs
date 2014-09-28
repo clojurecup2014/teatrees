@@ -29,7 +29,8 @@
 (defn edn-xhr [{:keys [method url data on-complete]}]
   (let [xhr (XhrIo.)
         clean-data (remove-empty-entries data)
-        full-url (str "test/" url ".edn"
+        ; full-url (str "test/" url ".edn"
+        full-url (str url
                    (when (and clean-data (= method :get))
                      (str "?" (params-for-url clean-data))))]
     (events/listen xhr goog.net.EventType.COMPLETE

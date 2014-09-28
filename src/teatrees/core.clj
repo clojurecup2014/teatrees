@@ -16,7 +16,7 @@
   (GET "/state/:uuid" [uuid] (gm/field-state uuid))
   (GET "/status/:uuid" [uuid] ()) ; For polling
   (POST "/move" [uuid dir player-nm] (gm/move uuid dir player-nm))
-  (POST "/join" [uuid name] (gm/try-join name))
+  (POST "/join" [name] (gm/try-join name))
 
   (GET "/" [] (resource-response "index.html" {:root "public"}))
   (route/resources "/")
@@ -25,5 +25,6 @@
 (def app
   (-> (handler/site game)
       wrap-status-code
-      wrap-case-change
-      (format/wrap-restful-format :formats [:json-kw :edn])))
+      ; wrap-case-change
+      (format/wrap-restful-format :formats [:edn])
+      ))

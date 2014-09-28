@@ -18,7 +18,7 @@
   ([response] (failure response :bad-request))
   ([response status] {:status status :body {:error response}}))
 
-(defn make-uuid [] (keyword (str (java.util.UUID/randomUUID))))
+(defn make-uuid [] (str (java.util.UUID/randomUUID)))
 
 (defn try-join
   [name]
@@ -31,14 +31,14 @@
         (alter available-games pop)
         (alter current-games conj game-new)
         (alter game-channels assoc uuid (async/chan))
-        game-new)
+        (success game-new))
       (let [gm { :uuid (make-uuid) 
                  :player1 name 
                  :player2 false 
                  :state :awaiting }]
         (dosync
           (alter available-games conj gm)
-          gm)))))
+          (success gm))))))
 
 (defn high-scores
   []
