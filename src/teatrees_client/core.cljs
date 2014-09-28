@@ -355,7 +355,9 @@
   (render [_]
     (dom/div {:class "footer"}
       (dom/a {:href "https://github.com/clojurecup2014/teatrees"} "Tea Trees")
-      " by Bumblebears (2014)")))
+      " by Bumblebears (say hello to "
+      (dom/a {:href "https://clojurecup.com/"} "Clojure Cup")
+      ")")))
 
 (defn start-game-submited [app owner e ch]
   (.preventDefault e)
@@ -374,7 +376,9 @@
     (dom/div {:class "container small-container"}
       (dom/div {:class "jumbotron"}
         (dom/h1 "Tea Trees")
-        (dom/p "3d tetris")
+        (dom/p "It's a 3d tetris. We give you 3 projections of a cubic field.
+                You use your mind power to compose them
+                and become an ultimate tetris champion.")
         (dom/form {:on-submit #(start-game-submited app owner % ch)}
           (dom/div {:class "form-group"}
             (dom/label {:for "username"} "Enter your name")
@@ -415,7 +419,8 @@
             (str (:name winner) " won, let's congratulate him (or her)!"))))
       (dom/button {:class "btn btn-primary"
                    :role "button"
-                   :on-click #(try-join-game app (:player-name @app))} "Play again"))))
+                   :on-click #(try-join-game app (:player-name @app))} "Play again")
+      (om/build footer app))))
 
 (defcomponent tetris [app owner]
   (init-state [_]
@@ -433,10 +438,10 @@
   (render-state [_ {:keys [ch] :as state}]
     ; (println app)
     (case (:game-state app)
-      :welcome (om/build welcome app {:opts {:ch ch}})
-      :waiting (om/build waiting app) 
-      :running (om/build game-field app {:opts {:ch ch}})
-      :finished   (om/build game-ended app {:opts {:ch ch}}))))
+      :welcome  (om/build welcome app {:opts {:ch ch}})
+      :waiting  (om/build waiting app) 
+      :running  (om/build game-field app {:opts {:ch ch}})
+      :finished (om/build game-ended app {:opts {:ch ch}}))))
 
 (om/root
   tetris
