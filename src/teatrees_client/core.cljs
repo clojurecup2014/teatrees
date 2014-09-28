@@ -9,7 +9,8 @@
             [cljs.core.async :refer [put! chan <!]]
             [clojure.string :as str]
             [clojure.set :as set]
-            [teatrees-client.utils :as utils :refer [edn-xhr]])
+            [teatrees-client.utils :as utils :refer [edn-xhr]]
+            [garden.color :as color :refer [hsl rgb as-hex]])
   (:import [goog History]
            [goog.history EventType]))
 
@@ -18,7 +19,7 @@
 (def app-state
   (atom
     {:game-state :welcome
-     :game-field-size {:x 10 :y 10 :z 31}
+     :game-field-size {:x 11 :y 11 :z 31}
      :cell-size 20
      :cell-gap 2
      :game-field []
@@ -38,35 +39,40 @@
   (om/update! app :game-state :ended))
 
 (defn update-received [app data timer]
-  (let [{:keys [game-state game-field players]} data]
-    (when (= game-state :ended)
-      (.stop timer)
-      (end-game app data))
-    (om/update! app :game-field game-field)
-    (om/transact! app :players
-      #(map merge % players))))
+  (let [{:keys [game-state game-field players border-pos]} data]
+    (if (= game-state :ended)
+      (do 
+        (.stop timer)
+        (end-game app data))
+      (do
+        (om/update! app :game-field game-field)
+        (om/update! app :border-pos border-pos)
+        (om/transact! app :players
+          #(map merge % players))))))
 
 (defn game-poll [app timer]
   (edn-xhr {:method :get
-            :url "request-update"
-            :data {:uuid (:uuid app)}
+            :url "game-poll"
+            :data {:uuid (:uuid @app)}
             :on-complete #(update-received app % timer)}))
 
-(defn start-game [app]
+(defn start-game [app {:keys [players player-no] :as data}]
   (om/update! app :game-state :running)
+  (om/update! app :players players)
+  (om/update! app :player-no player-no)
   (let [timer (goog.Timer. 1000)]
     (.start timer)
     (events/listen timer goog.Timer/TICK #(game-poll app timer))))
 
 (defn wait-poll [app timer]
   (edn-xhr {:method :get
-            :url "join"
-            :data {:uuid (:uuid app)}
+            :url "join-poll"
+            :data {:uuid (:uuid @app)}
             :on-complete
               (fn [{:keys [status] :as data}]
                 (when (= status :start)
                   (.stop timer)
-                  (start-game app)))}))
+                  (start-game app data)))}))
 
 (defn wait-for-start [app]
   (om/update! app :game-state :waiting)
@@ -81,7 +87,7 @@
   (om/update! app :uuid (:uuid data))
   (case (:status data) 
     :wait (wait-for-start app)
-    :start (start-game app)))
+    :start (start-game app data)))
 
 (defn try-join-game-test [app name]
   (start-or-wait app
@@ -99,6 +105,7 @@
                                                {:id 13 :x 5 :y 5 :z 37}]}]}}))
 
 (defn try-join-game [app name]
+  (om/update! app :player-name name)
   (edn-xhr {:method :get
             :url "join"
             :data {:name name}
@@ -191,9 +198,11 @@
 
 (defcomponent game-field-cell [{:keys [cell conv cell-size cell-gap]} owner]
   (render-state [_ state]
-    (let [[x y] (calc-cell-pos conv cell)]
+    (let [{:keys [depth]} cell
+          [x y] (calc-cell-pos conv cell)]
       (dom/rect {:class "cell"
-                 :x x :y y :width cell-size :height cell-size}))))
+                 :x x :y y :width cell-size :height cell-size
+                 :style {:fill (as-hex (hsl (* depth 5) 50 50))}}))))
 
 (defn bg-for-view [view width-px height-px conv border cell-size cell-gap]
   (condp contains? view
@@ -228,8 +237,7 @@
           conv (coord-converter cell-size cell-gap)
           visible-dims (view-visible-dims view)
           view-size (map game-field-size visible-dims)
-          [width-px height-px] (map #(- (conv %) cell-gap) view-size)
-          ]
+          [width-px height-px] (map #(- (conv %) cell-gap) view-size)]
       (dom/div {:class "col-xs-3 game-view"}
         (dom/h3 (-> view name str/capitalize))
         (dom/svg {:width width-px
@@ -239,15 +247,29 @@
             (om/build game-field-cell {:cell cell
                                        :conv conv
                                        :cell-size cell-size
-                                       :cell-gap cell-gap})))))))
+                                       :cell-gap cell-gap}))
+          (flatten 
+            (map-indexed
+              (fn [idx player]
+                (let [fig (:fig player)
+                      proj-fig (project-game-field fig game-field-size view)]
+                  (if (or (and (= view :top) (= idx 0))
+                          (and (= view :bottom) (= idx 1))
+                          (not (view #{:top :bottom})))
+                    (for [cell proj-fig]
+                      (om/build game-field-cell {:cell cell
+                                                 :conv conv
+                                                 :cell-size cell-size
+                                                 :cell-gap cell-gap})))))
+              (:players app))))))))
 
 (defcomponent game-field [app owner {:keys [ch] :as opts}]
   (render [_]
     (let [views [:top :left :front]
           {:keys [game-field game-field-size]} app]
       (dom/div {:class "container-fluid"
-          :id "tetris"
-          :ref "tetris"}
+                :id "tetris"
+                :ref "tetris"}
         (dom/div {:class "row game-field"}
           (om/build game-field-view app {:opts {:view :top}})
           (om/build game-field-view app {:opts {:view :left}})
@@ -313,12 +335,12 @@
     (dom/div {:class "container small-container"}
       (dom/h1 "Tea Trees")
       (dom/p (:player-name app)
-             ", we're waiting for another player to join...\n"
-             "Don't run away as it won't take long."))))
+             ", we're waiting for another player to join...
+             Don't run away as it won't take long."))))
 
 (defcomponent game-ended [app owner]
   (render [_]
-    (dom/div {:clas "contianer small-container"}
+    (dom/div {:class "contianer small-container"}
       (dom/h1 "Tea Trees")
       (dom/h2 "Game over")
       (let [winner (apply max-key :score (:players app))]
@@ -340,6 +362,7 @@
     (monitor-window-resize app owner)
     (window-resized app owner))
   (render-state [_ {:keys [ch] :as state}]
+    (println app)
     (condp contains? (:game-state app)
       #{:welcome} (om/build welcome app {:opts {:ch ch}})
       #{:waiting} (om/build waiting app) 

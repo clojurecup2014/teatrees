@@ -11,10 +11,6 @@
   stroke: red;
 }
 
-.cell {
-  fill: #34495e;
-}
-
 .game-field {
   display: table !important;
   table-layout: fixed;
