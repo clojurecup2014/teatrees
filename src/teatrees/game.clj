@@ -152,9 +152,7 @@
               { :x 0, :y 0, :z 0 }
               { :x 1, :y 0, :z 0 }])
 
-(def figures [square line arrow angle-l angle-r snake-l angle-r (for [x (range 0 x-max)
-                 y (range 0 y-max)]
-             {:x x :y y :z 0})])
+(def figures [square line arrow angle-l angle-r snake-l angle-r])
 
 (defn rotate* [direction axis figure center]
   (let [rest-axes (remove #{axis} [:x :y :z])
