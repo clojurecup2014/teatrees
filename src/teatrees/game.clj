@@ -2,14 +2,67 @@
   (:require [clojure.tools.logging :as log]
             [clojure.core.async :as async]))
 
-(def x-max 5)
-(def y-max 5)
-(def z-max 10)
-(def zborder 5)
+(def x-max 10)
+(def y-max 10)
+(def z-max 21)
+(def zborder 11)
 
-(defrecord Game [id field pl1id pl2id])
+(def available-games (ref (clojure.lang.PersistentQueue/EMPTY)))
+(def current-games (ref {}))
+(def game-channels (ref {}))
 
-;; TODO: Write figures templates
+(defn- success 
+  [response] { :status :ok :body response })
+
+(defn- failure
+  ([response] (failure response :bad-request))
+  ([response status] {:status status :body {:error response}}))
+
+(defn make-uuid [] (keyword (str (java.util.UUID/randomUUID))))
+
+(defn try-join
+  [name]
+  (dosync
+    (if (> (count @available-games) 0)
+      (let [game-old (peek @available-games)
+            game-new (assoc game-old :player2 name 
+                                     :state :started)
+            uuid (:uuid game-new)]
+        (alter available-games pop)
+        (alter current-games conj game-new)
+        (alter game-channels assoc uuid (async/chan))
+        game-new)
+      (let [gm { :uuid (make-uuid) 
+                 :player1 name 
+                 :player2 false 
+                 :state :awaiting }]
+        (dosync
+          (alter available-games conj gm)
+          gm)))))
+
+(defn high-scores
+  []
+  (success "empty"))
+
+(defn field-state
+  [uuid]
+  (success "ok"))
+
+(defn available
+  []
+  (success @available-games))
+
+(defn disconnect
+  [uuid playerid]
+  (success "ok"))
+
+(defn move-figure
+  [uuid dir playernm]
+  (if-let [ch (@game-channels uuid)]
+    ()
+    (failure "Game not found" :internal-server-error)))
+
+;; Game implementation
 
 (defn prohibited-fields [f figure] (into #{} (map f figure)))
 
@@ -51,7 +104,7 @@
     :top    (if (can-move? dir figure field)
               {:field field :figure (map #(assoc % :z (dec (:z %))) figure)}
               {:field (merge field figure) :figure nil})
-    (let [fg (if (can-move? dir field figure)
+    (let [fg (if (can-move? dir figure field)
                    (do
                      (log/info "Going move" dir)
                      (case dir
@@ -61,22 +114,3 @@
                       :down  (map #(assoc % :y (dec (:y %))) figure)))
                    figure)]
           {:field field :figure fg})))
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
