@@ -14,6 +14,13 @@
   (:import [goog History]
            [goog.history EventType]))
 
+;; Urls:
+;; POST /join - join the game
+;; GET  /game/:uuid/wait - wait for the second player (poll every second)
+;; GET  /game/:uuid/state - get current state (poll every second)    
+;; POST /game/:uuid/move (:player-no, :move) - move figure
+;; POST /game/:uuid/rotate (:player-no, :rotate) - rotate figure
+
 (enable-console-print!)
 
 (def app-state
@@ -52,8 +59,7 @@
 
 (defn game-poll [app timer]
   (edn-xhr {:method :get
-            :url "game-poll"
-            :data {:uuid (:uuid @app)}
+            :url (str "game/" (:uuid @app) "/state")
             :on-complete #(update-received app % timer)}))
 
 (defn start-game [app {:keys [players player-no] :as data}]
@@ -66,8 +72,7 @@
 
 (defn wait-poll [app timer]
   (edn-xhr {:method :get
-            :url "join-poll"
-            :data {:uuid (:uuid @app)}
+            :url (str "game/" (:uuid @app) "/wait")
             :on-complete
               (fn [{:keys [status] :as data}]
                 (when (= status :start)
@@ -111,6 +116,14 @@
             :data {:name name}
             :on-complete #(start-or-wait app %)}))
 
+(defn send-action [app transform]
+  (when (and (= :running (:game-state @app))
+             (:uuid @app))
+    (edn-xhr {:method :get
+              :url (str "game/" (:uuid @app) "/move")
+              :data {:player-no (:player-no @app) :transform transform}
+              :on-complete identity})))
+
 ;; =================================
 ;; Interaction
 
@@ -120,7 +133,6 @@
    38 :up
    39 :right
    40 :down
-   32 :space
    65 :A
    81 :Q
    83 :S
@@ -130,26 +142,25 @@
 
 (defn event->msg [e]
   (if-let [k (keycodes (.-keyCode e))]
-    (let [transform
-          (case k
-            :left {:t {:x -1}}
-            :up {:t {:y 1}}
-            :right {:t {:x 1}}
-            :down {:t {:y -1}}
-            :space {:t {:z -1}}
-            :Q {:r {:x -1}}
-            :W {:r {:x 1}}
-            :A {:r {:y -1}}
-            :S {:r {:y 1}}
-            :Z {:r {:z -1}}
-            :X {:r {:z 1}})]
-    {:type :keydown
-     :transform transform})))
+    (if-let [transform
+             (case k
+               :left {:move :left}
+               :up {:move :up}
+               :right {:move :right}
+               :down {:move :down}
+               :Q {:rotate {:axis :x :direction -1}}
+               :W {:rotate {:axis :x :direction 1}}
+               :A {:rotate {:axis :y :direction -1}}
+               :S {:rotate {:axis :y :direction 1}}
+               :Z {:rotate {:axis :z :direction -1}}
+               :X {:rotate {:axis :z :direction 1}})]
+      {:type :keydown
+       :transform transform})))
 
 (defn reg-events [ch]
   (events/listen (.-body js/document)
                  (.-KEYDOWN events/EventType)
-                 #(put! ch (event->msg %))))
+                 #(when-let [m (event->msg %)] (put! ch m))))
  
 ;; =================================
 ;; Presentation
@@ -209,7 +220,6 @@
     #{:front :back :left :right}
       (let [border-px (conv border)
             p2-y (+ border-px cell-size cell-gap)]
-        (println {:p2-y p2-y :border-px border-px :width-px width-px :height-px height-px})
         [(dom/rect {:class "view-bg-player1"
                     :width width-px
                     :height (- border-px cell-gap)})
@@ -315,7 +325,9 @@
   (println "msg received" msg)
   (case (:type msg)
     :try-join-game
-      (try-join-game app (:name msg))))
+      (try-join-game app (:name msg))
+    :keydown
+      (send-action app (:transform msg))))
 
 (defcomponent footer [app owner]
   (render [_]
@@ -323,21 +335,35 @@
       (dom/a {:href "https://github.com/clojurecup2014/teatrees"} "Tea Trees")
       " by Bumblebears (2014)")))
 
+(defn start-game-submited [app owner e ch]
+  (.preventDefault e)
+  (let [username (str/trim (.-value (om/get-node owner "username")))]
+    (println "username" username "count" (count username))
+    (if (< (count username) 2)
+      (om/set-state! owner :bad-name true)
+      (do
+        (om/set-state! owner :bad-name false)
+        (put! ch {:type :try-join-game :name username})))))
+
 (defcomponent welcome [app owner {:keys [ch] :as opts}]
-  (render [_]
+  (init-state [_]
+    {:bad-name false})
+  (render-state [_ {:keys [bad-name]}]
     (dom/div {:class "container small-container"}
       (dom/div {:class "jumbotron"}
         (dom/h1 "Tea Trees")
         (dom/p "3d tetris")
-        (dom/form {:on-submit (fn [e]
-                                (.preventDefault e)
-                                (put! ch {:type :try-join-game
-                                          :name (.-value (om/get-node owner "username"))}))}
+        (dom/form {:on-submit #(start-game-submited app owner % ch)}
           (dom/div {:class "form-group"}
             (dom/label {:for "username"} "Enter your name")
             (dom/input {:class "form-control"
                         :id "username"
                         :ref "username"}))
+          (when bad-name
+            (dom/div {:class "alert alert-warning"
+                      :role "alert"}
+              (dom/strong "Bad name!")
+              " No offence. Let's call you by name not shorter than 2 characters, ok?"))
           (dom/button {:class "btn btn-primary"} "Start!")))
       (om/build footer app))))
 
@@ -351,20 +377,30 @@
 
 (defcomponent game-ended [app owner]
   (render [_]
-    (dom/div {:class "contianer small-container"}
+    (dom/div {:class "container small-container"}
       (dom/h1 "Tea Trees")
       (dom/h2 "Game over")
-      (let [winner (apply max-key :score (:players app))]
-        (dom/p (:name winner) " won, let's congratulate him (or her)!"))
+      (let [players (:players app)
+            draw? (= (-> players first :score) (-> players second :score))
+            winner (apply max-key :score (:players app))]
+        (dom/p
+          (str "Score: " (str/join " and " (map #(str (:name %) " - " (:score %)) players)))
+          (dom/br nil)
+          (if draw?
+            (str "No way! It's draw! "
+                 (str/join " and " (map :name players))
+                 ", you were equally cool this time!")
+            (str (:name winner) " won, let's congratulate him (or her)!"))))
       (dom/button {:class "btn btn-primary"
                    :role "button"
-                   :on-click #(try-join-game app (:player-name app))} "Play again"))))
+                   :on-click #(try-join-game app (:player-name @app))} "Play again"))))
 
 (defcomponent tetris [app owner]
   (init-state [_]
     {:ch (chan)})
   (will-mount [_]
     (let [ch (om/get-state owner :ch)]
+      (reg-events ch)
       (go (loop []
         (let [msg (<! ch)]
           (handle-event app msg)
@@ -373,12 +409,12 @@
     (monitor-window-resize app owner)
     (window-resized app owner))
   (render-state [_ {:keys [ch] :as state}]
-    (println app)
-    (condp contains? (:game-state app)
-      #{:welcome} (om/build welcome app {:opts {:ch ch}})
-      #{:waiting} (om/build waiting app) 
-      #{:running} (om/build game-field app {:opts {:ch ch}})
-      #{:ended} (om/build game-ended app {:opts {:ch ch}}))))
+    ; (println app)
+    (case (:game-state app)
+      :welcome (om/build welcome app {:opts {:ch ch}})
+      :waiting (om/build waiting app) 
+      :running (om/build game-field app {:opts {:ch ch}})
+      :ended   (om/build game-ended app {:opts {:ch ch}}))))
 
 (om/root
   tetris
