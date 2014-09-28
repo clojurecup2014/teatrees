@@ -335,7 +335,7 @@
         cleansed-field (if (seq no-rows)
                          (cleanise-field cleanise-dir no-rows new-field (game :border-pos))
                          new-field)
-        new-border (+ border-pos (* (count no-rows) (if (= player 1) -1 1)))
+        new-border (+ border-pos (* (count no-rows) (if (= player 1) 1 -1)))
         score (if new-fig 0 (count figure))
         new-fig (if new-fig
                   new-fig
