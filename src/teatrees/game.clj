@@ -269,6 +269,12 @@
        sort
        (filter #(row-is-full? field %))))
 
+(defn fig-at-start?
+  [figure player]
+  (let [[f r] (if (= player 1) [min 0] [max (dec z-max)])
+        closest (apply f (map :z figure))]
+    (= closest r)))
+
 (defn move
   [dir figure field player zborder]
   (let [[axis dir-fn] (case dir
@@ -284,14 +290,14 @@
           (log/info "Going move" dir)
           {:field field
            :figure (map #(assoc % axis (dir-fn (axis %))) figure)})
-      (or (and (= player 1) (= dir :bottom)))
+      (and (= player 1) (= dir :bottom))
         {:field (concat field figure)
          :figure nil
-         :failed (not (can-move? :top figure field zborder))}
-      (or (and (= player 2) (= dir :top)))
+         :failed (fig-at-start? figure player)}
+      (and (= player 2) (= dir :top))
         {:field (concat field figure)
          :figure nil
-         :failed (not (can-move? :bottom figure field zborder))}
+         :failed (fig-at-start? figure player)}
       :else
         {:field field :figure figure})))
 
@@ -303,7 +309,7 @@
       (let [{new-field :field new-fig :figure :as mv-state} (move dir figure field player zborder)]
         (if new-fig
           (recur new-field new-fig)
-          mv-state)))))
+          {:field field :figure figure})))))
 
 (defn move!
   [uuid player dir]
@@ -331,6 +337,11 @@
     (when failed
       (async/go
         (async/>! events [:finished uuid player])))))
+
+(defn finish!
+  [uuid player]
+  (dosync
+    (alter current-games assoc-in [uuid :state] :finished)))
   
 (async/go-loop []
   (let [[[action & msg] _] (async/alts! [events])]
@@ -342,5 +353,7 @@
       :rotate (apply call-rotate! msg)
       :placed (log/info "Accepted placed message." msg)
       ;; :destroyed (apply shift-field* msg) ;; expects [uuid line-vec player]
-      :finished (log/info "Accepted finished message." msg)))
+      :finished (let [[uuid player] msg]
+                  (log/info "Accepted finished message." msg)
+                  (finish! uuid player))))
   (recur))
