@@ -108,7 +108,9 @@
 (defn rotate-figure
   [uuid axis dir player]
   (if (@current-games uuid)
-    (async/go (async/>! events [:rotate uuid dir axis player]))
+    (do
+      (async/go (async/>! events [:rotate uuid dir axis player]))
+      (success "ok"))
     (failure "Game not found" :internal-server-error)))
 
 ;; Game implementation
@@ -340,6 +342,5 @@
               (move! uuid player dir))
       :rotate (apply call-rotate! msg)
       :placed (log/info "Accepted placed message." msg)
-      ;; :destroyed (apply shift-field* msg) ;; expects [uuid line-vec player]
       :finished (log/info "Accepted finished message." msg)))
   (recur))
