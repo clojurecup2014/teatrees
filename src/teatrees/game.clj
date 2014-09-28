@@ -229,30 +229,18 @@
       (dosync
         (alter current-games assoc-in [uuid :players pl :fig] rotated)))))
 
-(defn- calc-shift-clean
-  [cell cmp line-vec zb]
-  (count (filter #(cmp (cell :z) % zb) line-vec)))
-
-(defn- shift-cell
-  [cell shift op]
-  (assoc cell :z (op (cell :z) shift)))
-
-(defn- calc-and-shift
-  [cell cmp line-vec zb op]
-  (let [shift (calc-shift-clean cell cmp line-vec zb)]
-    (shift-cell cell shift op)))
-
 (defn cleanise-field
   [dir line-vec field zb]
   (let [[cmp op] (case dir
                   :top [> -]
                   :bottom [< +])
-        line-set (into #{} line-vec)]
-    (log/info "Cleanse called")
-    (log/info (remove #(line-set (:z %)) field)
-    (->> field
-      (remove #(line-set (:z %)))
-      (map #(calc-and-shift % cmp line-vec zb op))))))
+        line-set (set line-vec)
+        rem-cnt (count line-vec)
+        clean-field (remove #(line-set (:z %)) field)]
+    (log/info "Cleanse called with" line-set)
+    (for [{z :z :as cell} clean-field
+          :let [removed-under (count (filter #(cmp z %) line-vec))]]
+      (assoc cell :z (op z rem-cnt removed-under)))))
 
 (defn place-new-fig
   [player]
@@ -339,13 +327,14 @@
                         (map #(assoc % :z (+ (:z %) shift-num)) cleansed-field)
                         new-field)
         score (if new-fig 0 (count figure))
+        line-score (* (count no-rows) 200)
         new-fig (if new-fig
                   new-fig
                   (place-new-fig player))
         new-game (-> game
                    (assoc :field cleansed-field)
                    (assoc :border-pos new-border)
-                   (update-in [:players (dec player) :score] + score)
+                   (update-in [:players (dec player) :score] + score line-score)
                    (assoc-in [:players (dec player) :fig] new-fig))]
     (dosync
       (alter current-games assoc uuid new-game))
