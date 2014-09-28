@@ -248,7 +248,7 @@
         line-set (into #{} line-vec)]
     (->> field
       (remove #(line-set (:z %)))
-      (map #(calc-and-shift % cmp line-vec zb op) field))))
+      (map #(calc-and-shift % cmp line-vec zb op)))))
 
 (defn place-new-fig
   [player]
