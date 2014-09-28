@@ -1,0 +1,13 @@
+{:game-state :running
+ :game-field []
+ :border-pos 15
+ :players [{:score 0
+            :fig [{:x 4 :y 1 :z 30}
+                  {:x 5 :y 1 :z 30}
+                  {:x 5 :y 1 :z 29}
+                  {:x 6 :y 1 :z 30}]}
+           {:score 0
+            :fig [{:x 4 :y 8 :z 0}
+                  {:x 5 :y 8 :z 0}
+                  {:x 5 :y 8 :z 1}
+                  {:x 5 :y 8 :z 2}]}]}
