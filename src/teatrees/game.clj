@@ -294,22 +294,37 @@
       :else
         {:field field :figure figure})))
 
+(defn fall
+  [field figure player zborder]
+  (let [dir (if (= player 1) :bottom :top)]
+    (loop [field field
+           figure figure]
+      (let [{new-field :field new-fig :figure :as mv-state} (move dir figure field player zborder)]
+        (if new-fig
+          (recur new-field new-fig)
+          mv-state)))))
+
 (defn move!
   [uuid player dir]
   (let [{:keys [field border-pos] :as game} (@current-games uuid)
         figure (get-in game [:players (dec player) :fig])
         {new-field :field new-fig :figure failed :failed}
-          (move dir figure field player border-pos)
+          (if (= dir :fall)
+            (fall field figure player border-pos)
+            (move dir figure field player border-pos))
         no-rows (if new-fig (rows-to-remove new-field new-fig) [])
         cleanise-dir (if (= player 1) :bottom :top)
         cleansed-field (cleanise-field cleanise-dir no-rows new-field (game :border-pos))
+        new-border (+ border-pos (* (count no-rows) (if (= player 1) -1 1)))
+        score (* (count no-rows) x-max y-max)
         new-fig (if new-fig
                   new-fig
                   (place-new-fig player))
         new-game (-> game
                    (assoc :field cleansed-field)
+                   (assoc :border-pos new-border)
+                   (update-in [:players (dec player) :score] + score)
                    (assoc-in [:players (dec player) :fig] new-fig))]
-    (log/info "Moved fig " figure " to " new-fig)
     (dosync
       (alter current-games assoc uuid new-game))
     (when failed
