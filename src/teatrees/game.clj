@@ -9,6 +9,7 @@
 (def zborder 11)
 
 (def rate 1000)
+(def keep-results (* 60 1000))
 
 (def available-games (ref (clojure.lang.PersistentQueue/EMPTY)))
 (def current-games (ref {}))
@@ -27,11 +28,15 @@
   (future
     (loop []
       (when-let [cg (@current-games uuid)]
-        (when (= :started (cg :state))
-          (async/>!! events [:move uuid 1 :bottom])
-          (async/>!! events [:move uuid 2 :top])
-          (Thread/sleep rate)
-          (recur))))))
+        (case (cg :state)
+          :finished (do
+                      (Thread/sleep keep-results)
+                      (dosync (alter current-games dissoc uuid)))
+          :started (do
+                     (async/>!! events [:move uuid "1" :bottom])
+                     (async/>!! events [:move uuid "2" :top])
+                     (Thread/sleep rate)
+                     (recur)))))))
 
 (defn make-uuid [] (str (java.util.UUID/randomUUID)))
 
@@ -52,6 +57,7 @@
       (let [gm { :uuid (make-uuid)
                  :border-pos (int (/ z-max 2))
                  :players [{:name name :score 0}]
+                 :field []
                  :state :awaiting }]
         (dosync
           (log/info "Created room" (gm :uuid))
@@ -97,7 +103,7 @@
 (defn rotate-figure
   [uuid dir axis player]
   (if (@current-games uuid)
-    (async/go (async/>! events [uuid dir axis player]))
+    (async/go (async/>! events [:rotate uuid dir axis player]))
     (failure "Game not found" :internal-server-error)))
 
 ;; Game implementation
@@ -215,23 +221,53 @@
               {:field field :figure (map #(assoc % :z (dec (:z %))) figure)}
               {:field (merge field figure) :figure nil})
     (let [fg (if (can-move? dir figure field)
-                   (do
-                     (log/info "Going move" dir)
-                     (case dir
-                      :left  (map #(assoc % :x (dec (:x %))) figure)
-                      :right (map #(assoc % :x (inc (:x %))) figure)
-                      :up    (map #(assoc % :y (inc (:y %))) figure)
-                      :down  (map #(assoc % :y (dec (:y %))) figure)))
-                   figure)]
+               (do
+                 (log/info "Going move" dir)
+                 (case dir
+                  :left  (map #(assoc % :x (dec (:x %))) figure)
+                  :right (map #(assoc % :x (inc (:x %))) figure)
+                  :up    (map #(assoc % :y (inc (:y %))) figure)
+                  :down  (map #(assoc % :y (dec (:y %))) figure)))
+               figure)]
           {:field field :figure fg})))
 
+(defn call-rotate!
+  [uuid dir axis player]
+  (when-let [cg (@current-games uuid)]
+    (let [pl (dec (Integer/parseInt player))
+          fig ((:players cg) pl)
+          field (cg :field)
+          rotated (rotate dir axis fig field player)]
+      (dosync
+        (alter current-games assoc-in [uuid :players pl :figure] rotated)))))
+
+(defn- calc-shift
+  [cell cmp line-vec zb]
+  (count (filter #(cmp (cell :z) % zb) line-vec)))
+
+(defn- shift-cell
+  [cell shift op]
+  (assoc cell :z (op (cell :z) shift)))
+
+(defn- calc-and-shift
+  [cell cmp line-vec zb op]
+  (let [shift (calc-shift cell cmp line-vec zb)]
+    (shift-cell cell shift op)))
+
+(defn shift-field*
+  [dir line-vec field zb]
+  (let [[cmp op] (case dir
+                  :top [> -]
+                  :bottom [< +])]
+    (map #(calc-and-shift % cmp line-vec zb op) field)))
 
 (async/go-loop []
-  (let [[msg _] (async/alts! [events])]
-    (log/info (first msg))
-    (case (first msg)
+  (let [[[action & msg] _] (async/alts! [events])]
+    (log/info action)
+    (case action
       :move (log/info "Accepted move message." msg)
-      :rotate (log/info "Accepted rotate message." msg)
+      :rotate (apply call-rotate! msg)
       :placed (log/info "Accepted placed message." msg)
+      ;; :destroyed (apply shift-field* msg) ;; expects [uuid line-vec player]
       :finished (log/info "Accepted finished message." msg)))
   (recur))
