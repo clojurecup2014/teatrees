@@ -10,7 +10,8 @@
 
 (def available-games (ref (clojure.lang.PersistentQueue/EMPTY)))
 (def current-games (ref {}))
-(def game-channels (ref {}))
+
+(def events (async/chan))
 
 (defn- success 
   [response] { :status :ok :body response })
@@ -33,7 +34,6 @@
         (log/info "Found room" uuid "Starting...")
         (alter available-games pop)
         (alter current-games assoc uuid game-new)
-        (alter game-channels assoc uuid (async/chan))      
         (success (assoc game-new :player-no 1)))
       (let [gm { :uuid (make-uuid)
                  :border-pos (int (/ z-max 2))
@@ -70,17 +70,21 @@
 
 (defn move-figure
   [uuid dir player]
-  (if-let [ch (@game-channels uuid)]
+  (if (@current-games uuid)
     (do
       (case player
         :player1 (when-not (= dir :top)
-                   (async/go (>! [:move uuid playernm :dir])))
+                   (async/go (async/>! events [:move uuid playernm :dir])))
         :player2 (when-not (= dir :bottom)
-                   (async/go (>! [:move uuid playernm :dir]))))
+                   (async/go (async/>! events [:move uuid playernm :dir]))))
       (success "ok"))
     (failure "Game not found" :internal-server-error))) 
 
-(defn rotate-figure)
+(defn rotate-figure
+  [uuid dir axis player]
+  (if (@current-games uuid)
+    (async/go (>! eve))
+    (failure "Game not found" :internal-server-error)))
 
 ;; Game implementation
 
