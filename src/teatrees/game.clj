@@ -244,8 +244,11 @@
   [dir line-vec field zb]
   (let [[cmp op] (case dir
                   :top [> -]
-                  :bottom [< +])]
-    (map #(calc-and-shift % cmp line-vec zb op) field)))
+                  :bottom [< +])
+        line-set (into #{} line-vec)]
+    (->> field
+      (remove #(line-set (:z %)))
+      (map #(calc-and-shift % cmp line-vec zb op) field))))
 
 (defn place-new-fig
   [player]
