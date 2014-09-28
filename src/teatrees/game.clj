@@ -150,7 +150,9 @@
               { :x 0, :y 0, :z 0 }
               { :x 1, :y 0, :z 0 }])
 
-(def figures [square line arrow angle-l angle-r snake-l angle-r])
+(def figures [square line arrow angle-l angle-r snake-l angle-r (for [x (range 0 x-max)
+                 y (range 0 y-max)]
+             {:x x :y y :z 0})])
 
 (defn rotate* [direction axis figure center]
   (let [rest-axes (remove #{axis} [:x :y :z])
@@ -331,7 +333,11 @@
         cleansed-field (if (seq no-rows)
                          (cleanise-field cleanise-dir no-rows new-field (game :border-pos))
                          new-field)
-        new-border (+ border-pos (* (count no-rows) (if (= player 1) 1 -1)))
+        shift-num (* (count no-rows) (if (= player 1) 1 -1))
+        new-border (+ border-pos shift-num)
+        shifted-field (if (seq no-rows)
+                        (map #(assoc % :z (+ (:z %) shift-num)) cleansed-field)
+                        new-field)
         score (if new-fig 0 (count figure))
         new-fig (if new-fig
                   new-fig
