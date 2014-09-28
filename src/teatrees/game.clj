@@ -323,7 +323,7 @@
         cleanise-dir (if (= player 1) :bottom :top)
         cleansed-field (cleanise-field cleanise-dir no-rows new-field (game :border-pos))
         new-border (+ border-pos (* (count no-rows) (if (= player 1) -1 1)))
-        score (* (count no-rows) x-max y-max)
+        score (if new-fig 0 (count figure))
         new-fig (if new-fig
                   new-fig
                   (place-new-fig player))
