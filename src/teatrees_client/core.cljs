@@ -68,17 +68,17 @@
 (defn start-game [app {:keys [players player-no] :as data}]
   (om/update! app :game-state :running)
   (om/update! app :players players)
-  (om/update! app :player-no player-no)
+  ; (when player-no (om/update! app :player-no player-no))
   (let [timer (goog.Timer. 1000)]
     (.start timer)
     (events/listen timer goog.Timer/TICK #(game-poll app timer))))
 
 (defn wait-poll [app timer]
   (edn-xhr {:method :get
-            :url (str "game/" (uuid-for-url (:uuid @app)) "/wait")
+            :url (str "game/" (uuid-for-url (:uuid @app)) "/await")
             :on-complete
-              (fn [{:keys [status] :as data}]
-                (when (= status :started)
+              (fn [{:keys [state] :as data}]
+                (when (= state :started)
                   (.stop timer)
                   (start-game app data)))}))
 
@@ -93,6 +93,7 @@
 
 (defn start-or-wait [app data]
   (om/update! app :uuid (:uuid data))
+  (om/update! app :player-no (:player-no data))
   (case (:state data) 
     :awaiting (wait-for-start app)
     :started (start-game app data)))
@@ -107,10 +108,11 @@
 (defn send-action [app transform]
   (when (and (= :running (:game-state @app))
              (:uuid @app))
-    (edn-xhr {:method :get
-              :url (str "game/" (uuid-for-url (:uuid @app)) "/move")
-              :data {:player-no (:player-no @app) :transform transform}
-              :on-complete identity})))
+    (let [op (if (:rotate transform) "rotate" "move")]
+      (edn-xhr {:method :get
+                :url (str "game/" (uuid-for-url (:uuid @app)) "/" op "/" (:player-no @app))
+                :data {:transform transform}
+                :on-complete identity}))))
 
 ;; =================================
 ;; Interaction

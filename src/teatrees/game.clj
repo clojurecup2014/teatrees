@@ -25,28 +25,37 @@
   (dosync
     (if (> (count @available-games) 0)
       (let [game-old (peek @available-games)
-            game-new (assoc game-old :player2 name 
-                                     :state :started)
+            game-new (-> game-old
+                         (assoc :state :started)
+                         (update-in [:players] conj {:name name :score 0}))
             uuid (:uuid game-new)]
         (alter available-games pop)
-        (alter current-games conj game-new)
+        (alter current-games assoc uuid game-new)
         (alter game-channels assoc uuid (async/chan))
-        (success game-new))
-      (let [gm { :uuid (make-uuid) 
-                 :player1 name 
-                 :player2 false 
+        (success (assoc game-new :player-no 1)))
+      (let [gm { :uuid (make-uuid)
+                 :border-pos (int (/ z-max 2))
+                 :players [{:name name :score 0}]
                  :state :awaiting }]
         (dosync
           (alter available-games conj gm)
-          (success gm))))))
+          (success (assoc (select-keys gm [:uuid :state]) :player-no 0)))))))
 
 (defn high-scores
   []
   (success "empty"))
 
+(defn awaiting-state
+  [uuid]
+  (if-let [game (@current-games uuid)]
+    (success game)
+    (success {:state :awaiting})))
+
 (defn field-state
   [uuid]
-  (success "ok"))
+  (if-let [game (@current-games uuid)]
+    (success game)
+    (success {:state :unknown})))
 
 (defn available
   []
