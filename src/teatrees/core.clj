@@ -5,6 +5,7 @@
             [compojure.handler :as handler]
             [compojure.response :as response]
             [ring.middleware.format :as format]
+            [ring.util.response :refer [resource-response]]
             [teatrees.middleware.key-caser :refer :all]
             [teatrees.middleware.status-wrapper :refer :all]
             [teatrees.game-master :as gm]
@@ -16,7 +17,7 @@
   (GET "/field-state/:uuid" [uuid] (gm/field-state uuid))
   (POST "/join" [uuid name] (gm/join uuid name))
 
-  (GET "/" [] (ring.util.response/redirect "/index.html"))
+  (GET "/" [] (resource-response "index.html" {:root "public"}))
   (route/resources "/")
   (route/not-found "Page not found"))
 
