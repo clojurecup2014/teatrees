@@ -35,13 +35,16 @@
 
 (defn make-uuid [] (str (java.util.UUID/randomUUID)))
 
+(declare place-new-fig)
+
 (defn try-join
   [name]
   (dosync
     (if (> (count @available-games) 0)
       (let [game-old (peek @available-games)
             game-new (-> game-old
-                         (assoc :state :started)
+                         (assoc :state :started
+                                :field (map place-new-fig [1 2]))
                          (update-in [:players] conj {:name name :score 0}))
             uuid (:uuid game-new)]
         (log/info "Found room" uuid "Starting...")
@@ -204,33 +207,83 @@
                 (check-dir #(assoc % :z (dec (:z %))) figure field)
                 (> (:z (apply max-key :z figure)) zb)))))
 
+(defn place-new-fig
+  [player]
+  (let [fig (rand-nth figures)
+        shift {:x (/ x-max 2)
+               :y (/ y-max 2)
+               :z (if (= player 1) 0 (dec z-max))}
+        moved-fig (map #(merge-with + % shift) fig)]
+    moved-fig))
+
+(defn row-is-full?
+  [field row]
+  (let [need-cells (* x-max y-max)
+        row-cells (filter #(= row (:z %)) field)]
+    (= need-cells (count row-cells))))
+
+(defn rows-to-remove
+  [field figure]
+  (->> figure
+       (map :z)
+       set
+       sort
+       (filter #(row-is-full? field %))))
+
 (defn move
-  [dir figure field]
-  (case dir
-    :bottom (if (can-move? dir figure field)
-              {:field field :figure (map #(assoc % :z (inc (:z %))) figure)}
-              (do
-                {:field (merge field figure) :figure nil}))
-    :top    (if (can-move? dir figure field)
-              {:field field :figure (map #(assoc % :z (dec (:z %))) figure)}
-              {:field (merge field figure) :figure nil})
-    (let [fg (if (can-move? dir figure field)
-                   (do
-                     (log/info "Going move" dir)
-                     (case dir
-                      :left  (map #(assoc % :x (dec (:x %))) figure)
-                      :right (map #(assoc % :x (inc (:x %))) figure)
-                      :up    (map #(assoc % :y (inc (:y %))) figure)
-                      :down  (map #(assoc % :y (dec (:y %))) figure)))
-                   figure)]
-          {:field field :figure fg})))
+  [dir figure field player]
+  (let [[axis dir-fn] (case dir
+                        :bottom [:z inc]
+                        :top [:z dec]
+                        :left [:x dec]
+                        :right [:x inc]
+                        :up [:y inc]
+                        :down [:y dec])]
+    (cond
+      (can-move? dir figure field)
+        (do
+          (log/info "Going move" dir)
+          {:field field
+           :figure (map #(assoc % axis (dir-fn (axis %))) figure)})
+      (or (and (= player 1) (= dir :bottom)))
+        {:field (merge field figure)
+         :figure nil
+         :failed (not (can-move? :top figure field))}
+      (or (and (= player 2) (= dir :top)))
+        {:field (merge field figure)
+         :figure nil
+         :failed (not (can-move? :bottom figure field))}
+      :else
+        {:field field :figure figure})))
 
-
+(defn move!
+  [uuid player dir]
+  (let [game (@current-games uuid)
+        field (:field game)
+        figure (get-in game [:players player :figure])
+        {new-field :field new-fig :figure failed :failed}
+          (move dir figure field player)
+        no-rows (if new-fig (rows-to-remove new-field new-fig) [])
+        ; new-field (remove-rows new-field no-rows)
+        new-fig (if new-fig
+                  new-fig
+                  (place-new-fig player))
+        new-game (-> game
+                     (assoc :field new-field)
+                     (assoc-in [:players player :figure] new-fig))]
+    (dosync
+      (alter current-games assoc uuid game))
+    (when failed
+      (async/go
+        (async/>!! events [:finished uuid player])))))
+  
 (async/go-loop []
-  (let [[msg _] (async/alts! [events])]
-    (log/info (first msg))
-    (case (first msg)
-      :move (log/info "Accepted move message." msg)
+  (let [[[action & msg] _] (async/alts! [events])]
+    (log/info action)
+    (case action
+      :move (let [[uuid player dir] msg]
+              (log/info "Accepted move message." msg)
+              (move! uuid player dir))
       :rotate (log/info "Accepted rotate message." msg)
       :placed (log/info "Accepted placed message." msg)
       :finished (log/info "Accepted finished message." msg)))
