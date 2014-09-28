@@ -14,6 +14,13 @@
   (:import [goog History]
            [goog.history EventType]))
 
+;; Urls:
+;; POST /join - join the game
+;; GET  /game/:uuid/wait - wait for the second player (poll every second)
+;; GET  /game/:uuid/state - get current state (poll every second)    
+;; POST /game/:uuid/move (:player-no, :move) - move figure
+;; POST /game/:uuid/rotate (:player-no, :rotate) - rotate figure
+
 (enable-console-print!)
 
 (def app-state
@@ -50,10 +57,12 @@
         (om/transact! app :players
           #(map merge % players))))))
 
+(defn uuid-for-url [uuid]
+  (if (symbol? uuid) (name uuid) uuid))
+
 (defn game-poll [app timer]
   (edn-xhr {:method :get
-            :url "game-poll"
-            :data {:uuid (:uuid @app)}
+            :url (str "game/" (uuid-for-url (:uuid @app)) "/state")
             :on-complete #(update-received app % timer)}))
 
 (defn start-game [app {:keys [players player-no] :as data}]
@@ -66,11 +75,10 @@
 
 (defn wait-poll [app timer]
   (edn-xhr {:method :get
-            :url "join-poll"
-            :data {:uuid (:uuid @app)}
+            :url (str "game/" (uuid-for-url (:uuid @app)) "/wait")
             :on-complete
               (fn [{:keys [status] :as data}]
-                (when (= status :start)
+                (when (= status :started)
                   (.stop timer)
                   (start-game app data)))}))
 
@@ -85,31 +93,24 @@
 
 (defn start-or-wait [app data]
   (om/update! app :uuid (:uuid data))
-  (case (:status data) 
-    :wait (wait-for-start app)
-    :start (start-game app data)))
-
-(defn try-join-game-test [app name]
-  (start-or-wait app
-                 {:status :start
-                  :uuid 1
-                  :update {:game-field [{:id 0 :x 0 :y 0 :z 0}
-                                        {:id 1 :x 0 :y 1 :z 0}
-                                        {:id 2 :x 1 :y 1 :z 0}
-                                        {:id 3 :x 1 :y 1 :z 1}]
-                           :players [{:name "Player 1"
-                                      :score 0
-                                      :figure [{:id 10 :x 5 :y 5 :z 38}
-                                               {:id 11 :x 5 :y 5 :z 39}
-                                               {:id 12 :x 6 :y 5 :z 39}
-                                               {:id 13 :x 5 :y 5 :z 37}]}]}}))
+  (case (:state data) 
+    :awaiting (wait-for-start app)
+    :started (start-game app data)))
 
 (defn try-join-game [app name]
   (om/update! app :player-name name)
-  (edn-xhr {:method :get
+  (edn-xhr {:method :post
             :url "join"
             :data {:name name}
             :on-complete #(start-or-wait app %)}))
+
+(defn send-action [app transform]
+  (when (and (= :running (:game-state @app))
+             (:uuid @app))
+    (edn-xhr {:method :get
+              :url (str "game/" (uuid-for-url (:uuid @app)) "/move")
+              :data {:player-no (:player-no @app) :transform transform}
+              :on-complete identity})))
 
 ;; =================================
 ;; Interaction
@@ -120,7 +121,6 @@
    38 :up
    39 :right
    40 :down
-   32 :space
    65 :A
    81 :Q
    83 :S
@@ -130,26 +130,25 @@
 
 (defn event->msg [e]
   (if-let [k (keycodes (.-keyCode e))]
-    (let [transform
-          (case k
-            :left {:t {:x -1}}
-            :up {:t {:y 1}}
-            :right {:t {:x 1}}
-            :down {:t {:y -1}}
-            :space {:t {:z -1}}
-            :Q {:r {:x -1}}
-            :W {:r {:x 1}}
-            :A {:r {:y -1}}
-            :S {:r {:y 1}}
-            :Z {:r {:z -1}}
-            :X {:r {:z 1}})]
-    {:type :keydown
-     :transform transform})))
+    (if-let [transform
+             (case k
+               :left {:move :left}
+               :up {:move :up}
+               :right {:move :right}
+               :down {:move :down}
+               :Q {:rotate {:axis :x :direction -1}}
+               :W {:rotate {:axis :x :direction 1}}
+               :A {:rotate {:axis :y :direction -1}}
+               :S {:rotate {:axis :y :direction 1}}
+               :Z {:rotate {:axis :z :direction -1}}
+               :X {:rotate {:axis :z :direction 1}})]
+      {:type :keydown
+       :transform transform})))
 
 (defn reg-events [ch]
   (events/listen (.-body js/document)
                  (.-KEYDOWN events/EventType)
-                 #(put! ch (event->msg %))))
+                 #(when-let [m (event->msg %)] (put! ch m))))
  
 ;; =================================
 ;; Presentation
@@ -209,7 +208,6 @@
     #{:front :back :left :right}
       (let [border-px (conv border)
             p2-y (+ border-px cell-size cell-gap)]
-        (println {:p2-y p2-y :border-px border-px :width-px width-px :height-px height-px})
         [(dom/rect {:class "view-bg-player1"
                     :width width-px
                     :height (- border-px cell-gap)})
@@ -230,7 +228,7 @@
                   :width width-px
                   :height height-px})]))
 
-(defcomponent game-field-view [app owner {:keys [ch view] :as opts}]
+(defcomponent game-field-view [app owner {:keys [view] :as opts}]
   (render [_]
     (let [{:keys [game-field game-field-size cell-size cell-gap]} app
           proj (project-game-field game-field game-field-size view)
@@ -238,43 +236,72 @@
           visible-dims (view-visible-dims view)
           view-size (map game-field-size visible-dims)
           [width-px height-px] (map #(- (conv %) cell-gap) view-size)]
-      (dom/div {:class "col-xs-3 game-view"}
-        (dom/h3 (-> view name str/capitalize))
-        (dom/svg {:width width-px
-                  :height height-px}
-          (bg-for-view view width-px height-px conv (:border-pos app) cell-size cell-gap)
-          (for [cell proj]
-            (om/build game-field-cell {:cell cell
-                                       :conv conv
-                                       :cell-size cell-size
-                                       :cell-gap cell-gap}))
-          (flatten 
-            (map-indexed
-              (fn [idx player]
-                (let [fig (:fig player)
-                      proj-fig (project-game-field fig game-field-size view)]
-                  (if (or (and (= view :top) (= idx 0))
-                          (and (= view :bottom) (= idx 1))
-                          (not (view #{:top :bottom})))
-                    (for [cell proj-fig]
-                      (om/build game-field-cell {:cell cell
-                                                 :conv conv
-                                                 :cell-size cell-size
-                                                 :cell-gap cell-gap})))))
-              (:players app))))))))
+      (dom/svg {:width width-px
+                :height height-px}
+        (bg-for-view view width-px height-px conv (:border-pos app) cell-size cell-gap)
+        (for [cell proj]
+          (om/build game-field-cell {:cell cell
+                                     :conv conv
+                                     :cell-size cell-size
+                                     :cell-gap cell-gap}))
+        (flatten 
+          (map-indexed
+            (fn [idx player]
+              (let [fig (:fig player)
+                    proj-fig (project-game-field fig game-field-size view)]
+                (if (or (and (= view :top) (= idx 0))
+                        (and (= view :bottom) (= idx 1))
+                        (not (view #{:top :bottom})))
+                  (for [cell proj-fig]
+                    (om/build game-field-cell {:cell cell
+                                               :conv conv
+                                               :cell-size cell-size
+                                               :cell-gap cell-gap})))))
+            (:players app)))))))
+
+(defcomponent player-info [{:keys [player player-no]} owner]
+  (render [_]
+    (let [{:keys [name score]} player]
+      (dom/div {:class (str "player-info player-info-" (inc player-no))}
+        name
+        (dom/br nil)
+        (str "Score: " score)))))
+
+(def control-help
+  (dom/dl
+    (flatten 
+      (for [[k1 k2 desc] [["Left" "Right" "Move on X axis"]
+                          ["Up" "Down" "Move on Y axis"]
+                          ["Q" "W" "Rotate around X axis"]
+                          ["A" "S" "Rotate around Y axis"]
+                          ["Z" "X" "Rotate around Z axis"]]]
+        [(dom/dt
+           (dom/kbd k1)
+           "/"
+           (dom/kbd k2))
+         (dom/dd desc)]))))
 
 (defcomponent game-field [app owner {:keys [ch] :as opts}]
   (render [_]
-    (let [views [:top :left :front]
-          {:keys [game-field game-field-size]} app]
+    (let [views [:top :left :front :bottom]
+          {:keys [game-field game-field-size player-no]} app]
       (dom/div {:class "container-fluid"
                 :id "tetris"
                 :ref "tetris"}
+        (dom/div {:class "row header-row"}
+          (for [view views]
+            (dom/div {:class "col-xs-3"}
+              (dom/h3 (-> view name str/capitalize)))))
         (dom/div {:class "row game-field"}
-          (om/build game-field-view app {:opts {:view :top}})
-          (om/build game-field-view app {:opts {:view :left}})
-          (om/build game-field-view app {:opts {:view :front}})
-          (om/build game-field-view app {:opts {:view :bottom}}))))))
+          (for [view views]
+            (dom/div {:class (str "col-xs-3 game-view" (when (= view :bottom) " game-view-bottom"))}
+              (when (= view :bottom)
+                [(om/build player-info {:player (-> app :players second) :player-no 1})
+                 (when (= player-no 1) control-help)])
+              (om/build game-field-view app {:opts {:view view}})
+              (when (= view :top)
+                [(om/build player-info {:player (-> app :players first) :player-no 0})
+                 (when (= player-no 0) control-help)]))))))))
 
 (defn calc-cell-size-and-gap [field-size window-size]
   (let [min-x (/ (:x window-size) 4 (:x field-size))
@@ -289,7 +316,7 @@
 (defn window-resized [app owner]
   (let [{:keys [game-field-size]} (om/value app)
         win-size {:x (- (.-innerWidth js/window) 20)
-                  :y (- (.-innerHeight js/window) 20)}
+                  :y (- (.-innerHeight js/window) 70)}
         [cell-size cell-gap] (calc-cell-size-and-gap game-field-size
                                                      win-size)]
     (om/update! app :cell-size cell-size)
@@ -304,7 +331,9 @@
   (println "msg received" msg)
   (case (:type msg)
     :try-join-game
-      (try-join-game app (:name msg))))
+      (try-join-game app (:name msg))
+    :keydown
+      (send-action app (:transform msg))))
 
 (defcomponent footer [app owner]
   (render [_]
@@ -312,21 +341,35 @@
       (dom/a {:href "https://github.com/clojurecup2014/teatrees"} "Tea Trees")
       " by Bumblebears (2014)")))
 
+(defn start-game-submited [app owner e ch]
+  (.preventDefault e)
+  (let [username (str/trim (.-value (om/get-node owner "username")))]
+    (println "username" username "count" (count username))
+    (if (< (count username) 2)
+      (om/set-state! owner :bad-name true)
+      (do
+        (om/set-state! owner :bad-name false)
+        (put! ch {:type :try-join-game :name username})))))
+
 (defcomponent welcome [app owner {:keys [ch] :as opts}]
-  (render [_]
+  (init-state [_]
+    {:bad-name false})
+  (render-state [_ {:keys [bad-name]}]
     (dom/div {:class "container small-container"}
       (dom/div {:class "jumbotron"}
         (dom/h1 "Tea Trees")
         (dom/p "3d tetris")
-        (dom/form {:on-submit (fn [e]
-                                (.preventDefault e)
-                                (put! ch {:type :try-join-game
-                                          :name (.-value (om/get-node owner "username"))}))}
+        (dom/form {:on-submit #(start-game-submited app owner % ch)}
           (dom/div {:class "form-group"}
             (dom/label {:for "username"} "Enter your name")
             (dom/input {:class "form-control"
                         :id "username"
                         :ref "username"}))
+          (when bad-name
+            (dom/div {:class "alert alert-warning"
+                      :role "alert"}
+              (dom/strong "Bad name!")
+              " No offence. Let's call you by name not shorter than 2 characters, ok?"))
           (dom/button {:class "btn btn-primary"} "Start!")))
       (om/build footer app))))
 
@@ -340,20 +383,30 @@
 
 (defcomponent game-ended [app owner]
   (render [_]
-    (dom/div {:class "contianer small-container"}
+    (dom/div {:class "container small-container"}
       (dom/h1 "Tea Trees")
       (dom/h2 "Game over")
-      (let [winner (apply max-key :score (:players app))]
-        (dom/p (:name winner) " won, let's congratulate him (or her)!"))
+      (let [players (:players app)
+            draw? (= (-> players first :score) (-> players second :score))
+            winner (apply max-key :score (:players app))]
+        (dom/p
+          (str "Score: " (str/join " and " (map #(str (:name %) " - " (:score %)) players)))
+          (dom/br nil)
+          (if draw?
+            (str "No way! It's draw! "
+                 (str/join " and " (map :name players))
+                 ", you were equally cool this time!")
+            (str (:name winner) " won, let's congratulate him (or her)!"))))
       (dom/button {:class "btn btn-primary"
                    :role "button"
-                   :on-click #(try-join-game app (:player-name app))} "Play again"))))
+                   :on-click #(try-join-game app (:player-name @app))} "Play again"))))
 
 (defcomponent tetris [app owner]
   (init-state [_]
     {:ch (chan)})
   (will-mount [_]
     (let [ch (om/get-state owner :ch)]
+      (reg-events ch)
       (go (loop []
         (let [msg (<! ch)]
           (handle-event app msg)
@@ -362,12 +415,12 @@
     (monitor-window-resize app owner)
     (window-resized app owner))
   (render-state [_ {:keys [ch] :as state}]
-    (println app)
-    (condp contains? (:game-state app)
-      #{:welcome} (om/build welcome app {:opts {:ch ch}})
-      #{:waiting} (om/build waiting app) 
-      #{:running} (om/build game-field app {:opts {:ch ch}})
-      #{:ended} (om/build game-ended app {:opts {:ch ch}}))))
+    ; (println app)
+    (case (:game-state app)
+      :welcome (om/build welcome app {:opts {:ch ch}})
+      :waiting (om/build waiting app) 
+      :running (om/build game-field app {:opts {:ch ch}})
+      :ended   (om/build game-ended app {:opts {:ch ch}}))))
 
 (om/root
   tetris

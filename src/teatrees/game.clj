@@ -1,7 +1,6 @@
 (ns teatrees.game
   (:require [clojure.tools.logging :as log]
-            [clojure.core.async :as async])
-  (:import (java.util TimerTask Timer)))
+            [clojure.core.async :as async]))
 
 (def x-max 10)
 (def y-max 10)
@@ -10,7 +9,7 @@
 
 (def available-games (ref (clojure.lang.PersistentQueue/EMPTY)))
 (def current-games (ref {}))
-(def global-events (async/chan))
+(def game-channels (ref {}))
 
 (defn- success 
   [response] { :status :ok :body response })
@@ -19,32 +18,29 @@
   ([response] (failure response :bad-request))
   ([response status] {:status status :body {:error response}}))
 
-(defn make-uuid [] (keyword (str (java.util.UUID/randomUUID))))
-
-(defn make-timer
-  [uuid])
+(defn make-uuid [] (str (java.util.UUID/randomUUID)))
 
 (defn try-join
   [name]
   (dosync
     (if (> (count @available-games) 0)
       (let [game-old (peek @available-games)
-            uuid (:uuid game-old)
             game-new (assoc game-old :player2 name 
-                                     :state :started
-                                     :field []
-                                     :player1-figure []
-                                     :player2-figure []
-                                     :timer (make-timer uuid default-rate))]
+                                     :state :started)
+            uuid (:uuid game-new)]
+        (log/info "Found room" uuid "Starting...")
         (alter available-games pop)
         (alter current-games conj game-new)
-        (dissoc game-new :timer))
+        (alter game-channels assoc uuid (async/chan))
+        (success game-new))
       (let [gm { :uuid (make-uuid) 
                  :player1 name 
                  :player2 false 
                  :state :awaiting }]
-        (alter available-games conj gm)
-        gm))))
+        (dosync
+          (log/info "Created room" uuid)
+          (alter available-games conj gm)
+          (success gm))))))
 
 (defn high-scores
   []
@@ -69,73 +65,6 @@
     (failure "Game not found" :internal-server-error)))
 
 ;; Game implementation
-
-(def square-templ { :type :square
-                    :center 2
-                    :fig [{:x 0, :y 0, :z 0}
-                          {:x 1, :y 0, :z 0}
-                          {:x 0, :y 1, :z 0}
-                          {:x 1, :y 1, :z 0}]})
-
-(def line-templ { :type :line
-                  :center 2
-                  :fig [{:x 0, :y 0, :z 0}
-                        {:x 1, :y 0, :z 0}
-                        {:x 2, :y 0, :z 0}
-                        {:x 3, :y 0, :z 0}]})
-
-(def arrow-templ { :type :arrow
-                   :center 2
-                   :fig [{:x 0, :y 0, :z 0}
-                         {:x 1, :y 0, :z 0}
-                         {:x 2, :y 0, :z 0}
-                         {:x 1, :y 1, :z 0}]})
-
-(def angle-r-templ { :type :anlge-r
-                     :center 2
-                     :fig [{:x 0, :y 0, :z 0}
-                     {:x 1, :y 0, :z 0}
-                     {:x 2, :y 0, :z 0}
-                     {:x 2, :y 1, :z 0}] })
-
-(def angle-l-templ { :type :angle-l
-                     :center 2
-                     :fig [{:x 0, :y 0, :z 0}
-                           {:x 1, :y 0, :z 0}
-                           {:x 2, :y 0, :z 0}
-                           {:x 0, :y 1, :z 0}]})
-
-(def snake-l-templ { :type :snake-l
-                     :center 2
-                     :fig [{:x 0, :y 0, :z 0}
-                           {:x 1, :y 0, :z 0}
-                           {:x 1, :y 1, :z 0}
-                           {:x 2, :y 1, :z 0}]})
-
-(def snake-r-templ { :type :snake-r
-                     :center 2
-                     :fig [{:x 0, :y 1, :z 0}
-                           {:x 1, :y 1, :z 0}
-                           {:x 1, :y 0, :z 0}
-                           {:x 2, :y 0, :z 0}]})
-
-(declare rotate)
-
-(def figures [square-templ 
-              line-templ
-              arrow-templ
-              angle-r-templ
-              angle-l-templ
-              snake-l-templ
-              snake-r-templ])
-
-(defn make-figure
-  [player]
-  (case player
-    :player1 (let [figure (get figures (rand-int (count figures)))]
-               (map #{}))
-    :player2 (let [figure ((get figures (rand-int (count figures))))]
-               (map #{}))))
 
 (defn prohibited-fields [f figure] (into #{} (map f figure)))
 
@@ -187,39 +116,3 @@
                       :down  (map #(assoc % :y (dec (:y %))) figure)))
                    figure)]
           {:field field :figure fg})))
-
-(defn rotate
-  [figure center axis direction]
-  (let [rest-axes (remove #{axis} [:x :y :z])
-        rot-fn (case direction
-                 :cw (fn [[x y]] [y (- x)])
-                 :ccw (fn [[x y]] [(- y) x]))]
-    (for [cell figure
-          :let [norm-cell (merge-with - cell center)
-                rot-vals (map norm-cell rest-axes)
-                rotated-vals (rot-fn rot-vals)
-                rotated-cell (merge norm-cell
-                                    (apply hash-map (interleave rest-axes rotated-vals)))
-                new-cell (merge-with + rotated-cell center)]]
-      new-cell)))
-
-
-
-(async/go-loop []
-  (when-let [[type & params] (async/alts! @game-channels)]
-    (case type
-      :start ()
-      :move ()
-      :finish ())
-    (recur))))]
-
-
-
-
-
-
-
-
-
-
-
