@@ -25,7 +25,8 @@
 
 (defn make-timer
   [uuid]
-  (future
+  (async/thread
+    (log/info "Created timer for" uuid)
     (loop []
       (when-let [cg (@current-games uuid)]
         (Thread/sleep rate)
