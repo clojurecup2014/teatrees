@@ -2,12 +2,6 @@
   (:require [clojure.test :refer :all]
             [teatrees.game :refer :all]))
 
-
-; (def x-max 5)
-; (def y-max 5)
-; (def z-max 11)
-; (def zborder 5)
-
 (def empty-field [])
 ;;    0 1 2 3 4
 ;; 4| 0 0 0 0 1

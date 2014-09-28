@@ -1,6 +1,7 @@
 (ns teatrees.game
   (:require [clojure.tools.logging :as log]
-            [clojure.core.async :as async]))
+            [clojure.core.async :as async]
+            [clj-time.core :refer [before? now ago minutes]]))
 
 (def x-max 10)
 (def y-max 10)
@@ -29,15 +30,17 @@
                          (assoc :state :started)
                          (update-in [:players] conj {:name name :score 0}))
             uuid (:uuid game-new)]
+        (log/info "Found room" uuid "Starting...")
         (alter available-games pop)
         (alter current-games assoc uuid game-new)
-        (alter game-channels assoc uuid (async/chan))
+        (alter game-channels assoc uuid (async/chan))      
         (success (assoc game-new :player-no 1)))
       (let [gm { :uuid (make-uuid)
                  :border-pos (int (/ z-max 2))
                  :players [{:name name :score 0}]
                  :state :awaiting }]
         (dosync
+          (log/info "Created room" (gm :uuid))
           (alter available-games conj gm)
           (success (assoc (select-keys gm [:uuid :state]) :player-no 0)))))))
 
@@ -66,12 +69,91 @@
   (success "ok"))
 
 (defn move-figure
-  [uuid dir playernm]
+  [uuid dir player]
   (if-let [ch (@game-channels uuid)]
-    ()
-    (failure "Game not found" :internal-server-error)))
+    (do
+      (case player
+        :player1 (when-not (= dir :top)
+                   (async/go (>! [:move uuid playernm :dir])))
+        :player2 (when-not (= dir :bottom)
+                   (async/go (>! [:move uuid playernm :dir]))))
+      (success "ok"))
+    (failure "Game not found" :internal-server-error))) 
+
+(defn rotate-figure)
 
 ;; Game implementation
+
+(def square [{ :x 0, :y 0, :z 0 }
+             { :x 0, :y 1, :z 0 } 
+             { :x 1, :y 0, :z 0 }
+             { :x 1, :y 1, :z 0 }])
+
+(def line   [{ :x -1, :y 0, :z 0 }
+             { :x 0, :y 0, :z 0 } 
+             { :x 1, :y 0, :z 0 }
+             { :x 2, :y 0, :z 0 }])
+
+(def arrow  [{ :x -1, :y 0, :z 0 }
+             { :x 0, :y 0, :z 0 } 
+             { :x 0, :y 1, :z 0 }
+             { :x 1, :y 0, :z 0 }])
+
+(def angle-l [{ :x -1, :y 1, :z 0 }
+              { :x -1, :y 0, :z 0 } 
+              { :x 0, :y 0, :z 0 }
+              { :x 1, :y 0, :z 0 }])
+
+(def angle-r [{ :x -1, :y 0, :z 0 }
+              { :x 0, :y 0, :z 0 } 
+              { :x 1, :y 0, :z 0 }
+              { :x 1, :y 1, :z 0 }])
+
+(def snake-l [{ :x -1, :y 0, :z 0 }
+              { :x 0, :y 0, :z 0 } 
+              { :x 0, :y 1, :z 0 }
+              { :x 1, :y 1, :z 0 }])
+
+(def snake-r [{ :x -1, :y 1, :z 0 }
+              { :x 0, :y 1, :z 0 } 
+              { :x 0, :y 0, :z 0 }
+              { :x 1, :y 0, :z 0 }])
+
+(def figures [square line arrow angle-l angle-r snake-l angle-r])
+
+(defn rotate* [direction axis figure center]
+  (let [rest-axes (remove #{axis} [:x :y :z])
+        rot-fn (case direction
+                 :cw (fn [[x y]] [y (- x)])
+                 :ccw (fn [[x y]] [(- y) x]))]
+    (for [cell figure
+          :let [norm-cell (merge-with - cell center)
+                rot-vals (map norm-cell rest-axes)
+                rotated-vals (rot-fn rot-vals)
+                rotated-cell (merge norm-cell
+                                    (apply hash-map (interleave rest-axes rotated-vals)))
+                new-cell (merge-with + rotated-cell center)]]
+      new-cell)))
+
+(defn can-rotate?
+  [dir axis figure field zmin zmax]
+  (let [center (second figure)
+        prohibited (into #{} (rotate* figure center axis dir))]
+    (and 
+      (nil? (some prohibited field))
+      (every? #(and (> % -1) (< % x-max)) (map :x prohibited))
+      (every? #(and (> % -1) (< % y-max)) (map :y prohibited))
+      (every? #(and (> % zmin) (< % z-max)) (map :z prohibited)))))
+
+(defn rotate
+  [direction axis figure field player]
+  (let [center (second figure)
+        [zmin zmax] (case player
+                      :player1 [-1 zborder]
+                      :player2 [zborder z-max])]
+    (if (can-rotate? direction axis figure field zmin zmax)
+      (rotate* direction axis figure center)
+      figure)))
 
 (defn prohibited-fields [f figure] (into #{} (map f figure)))
 

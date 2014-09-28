@@ -6,7 +6,6 @@
             [compojure.response :as response]
             [ring.middleware.format :as format]
             [ring.util.response :refer [resource-response]]
-            [teatrees.middleware.key-caser :refer :all]
             [teatrees.middleware.status-wrapper :refer :all]
             [teatrees.game :as gm]))
 
@@ -25,6 +24,4 @@
 (def app
   (-> (handler/site game)
       wrap-status-code
-      ; wrap-case-change
-      (format/wrap-restful-format :formats [:edn])
-      ))
+      (format/wrap-restful-format :formats [:edn])))
