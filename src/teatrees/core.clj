@@ -12,9 +12,9 @@
 (defroutes game
   (GET "/available-games" [] (gm/available))
   (GET "/high-scores" [] (gm/high-scores))
-  (GET "/state/:uuid" [uuid] (gm/field-state uuid))
-  (GET "/status/:uuid" [uuid] ()) ; For polling
-  (POST "/move" [uuid dir player-nm] (gm/move uuid dir player-nm))
+  (GET "/game/:uuid/state" [uuid] (gm/field-state uuid))
+  (GET "/game/:uuid/await" [uuid] (gm/awaiting-state uuid))
+  (POST "/game/:uuid/move/:player-nm" [uuid player-nm dir] (gm/move uuid dir player-nm))
   (POST "/join" [name] (gm/try-join name))
 
   (GET "/" [] (resource-response "index.html" {:root "public"}))

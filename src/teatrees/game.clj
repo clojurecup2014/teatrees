@@ -70,19 +70,21 @@
 
 (defn move-figure
   [uuid dir player]
-  (if-let [ch (@game-channels uuid)]
+  (if (@current-games uuid)
     (do
       (case player
         :player1 (when-not (= dir :top)
-                   (async/go (>! events [:move uuid playernm :dir])))
+                   (async/go (async/>! events [:move uuid playernm :dir])))
         :player2 (when-not (= dir :bottom)
-                   (async/go (>! events [:move uuid playernm :dir]))))
+                   (async/go (async/>! events [:move uuid playernm :dir]))))
       (success "ok"))
     (failure "Game not found" :internal-server-error))) 
 
 (defn rotate-figure
   [uuid dir axis player]
-  (if-let [ch @]))
+  (if (@current-games uuid)
+    (async/go (>! eve))
+    (failure "Game not found" :internal-server-error)))
 
 ;; Game implementation
 
