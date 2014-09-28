@@ -43,12 +43,12 @@
 ;; App lifecycle
 
 (defn end-game [app data]
-  (om/update! app :game-state :ended))
+  (om/update! app :game-state :finished))
 
 (defn update-received [app data timer]
   (let [{:keys [state field players border-pos]} data]
     (case state
-      :ended
+      :finished
       (do 
         (.stop timer)
         (end-game app data))
@@ -93,7 +93,7 @@
     (events/listen timer goog.Timer/TICK #(wait-poll app timer))))
 
 (defn end-game [app data]
-  (om/update! app :game-state :ended))
+  (om/update! app :game-state :finished))
 
 (defn start-or-wait [app data]
   (om/update! app :uuid (:uuid data))
@@ -211,7 +211,7 @@
           [x y] (calc-cell-pos conv cell)]
       (dom/rect {:class "cell"
                  :x x :y y :width cell-size :height cell-size
-                 :style {:fill (as-hex (hsl (* depth 5) 50 50))}}))))
+                 :style {:fill (as-hex (hsl (* depth 15) 50 50))}}))))
 
 (defn bg-for-view [view width-px height-px conv border cell-size cell-gap]
   (condp contains? view
@@ -286,13 +286,15 @@
     (flatten 
       (for [[k1 k2 desc] [["Left" "Right" "Move on X axis"]
                           ["Up" "Down" "Move on Y axis"]
+                          ["Space" nil "Fall"]
                           ["Q" "W" "Rotate around X axis"]
                           ["A" "S" "Rotate around Y axis"]
                           ["Z" "X" "Rotate around Z axis"]]]
         [(dom/dt
            (dom/kbd k1)
-           "/"
-           (dom/kbd k2))
+           (when k2
+             "/"
+             (dom/kbd k2)))
          (dom/dd desc)]))))
 
 (defcomponent game-field [app owner {:keys [ch] :as opts}]
@@ -434,7 +436,7 @@
       :welcome (om/build welcome app {:opts {:ch ch}})
       :waiting (om/build waiting app) 
       :running (om/build game-field app {:opts {:ch ch}})
-      :ended   (om/build game-ended app {:opts {:ch ch}}))))
+      :finished   (om/build game-ended app {:opts {:ch ch}}))))
 
 (om/root
   tetris

@@ -251,7 +251,7 @@
                   :bottom [< +])
         line-set (into #{} line-vec)]
     (log/info "Cleanse called")
-    (log/info (remove #(line-set (:z %) field))
+    (log/info (remove #(line-set (:z %)) field)
     (->> field
       (remove #(line-set (:z %)))
       (map #(calc-and-shift % cmp line-vec zb op))))))
@@ -280,6 +280,12 @@
                  (filter #(row-is-full? field %)))]
     result))
 
+(defn fig-at-start?
+  [figure player]
+  (let [[f r] (if (= player 1) [min 0] [max (dec z-max)])
+        closest (apply f (map :z figure))]
+    (= closest r)))
+
 (defn move
   [dir figure field player zborder]
   (let [[axis dir-fn] (case dir
@@ -295,14 +301,14 @@
           (log/info "Going move" dir)
           {:field field
            :figure (map #(assoc % axis (dir-fn (axis %))) figure)})
-      (or (and (= player 1) (= dir :bottom)))
+      (and (= player 1) (= dir :bottom))
         {:field (concat field figure)
          :figure nil
-         :failed (not (can-move? :top figure field zborder))}
-      (or (and (= player 2) (= dir :top)))
+         :failed (fig-at-start? figure player)}
+      (and (= player 2) (= dir :top))
         {:field (concat field figure)
          :figure nil
-         :failed (not (can-move? :bottom figure field zborder))}
+         :failed (fig-at-start? figure player)}
       :else
         {:field field :figure figure})))
 
@@ -314,7 +320,7 @@
       (let [{new-field :field new-fig :figure :as mv-state} (move dir figure field player zborder)]
         (if new-fig
           (recur new-field new-fig)
-          mv-state)))))
+          {:field field :figure figure})))))
 
 (defn move!
   [uuid player dir]
@@ -330,7 +336,7 @@
                          (cleanise-field cleanise-dir no-rows new-field (game :border-pos))
                          new-field)
         new-border (+ border-pos (* (count no-rows) (if (= player 1) -1 1)))
-        score (* (count no-rows) x-max y-max)
+        score (if new-fig 0 (count figure))
         new-fig (if new-fig
                   new-fig
                   (place-new-fig player))
@@ -344,6 +350,11 @@
     (when failed
       (async/go
         (async/>! events [:finished uuid player])))))
+
+(defn finish!
+  [uuid player]
+  (dosync
+    (alter current-games assoc-in [uuid :state] :finished)))
   
 (async/go-loop []
   (let [[[action & msg] _] (async/alts! [events])]
@@ -352,5 +363,8 @@
       :move (let [[uuid player dir] msg]
               (move! uuid player dir))
       :rotate (apply call-rotate! msg)
-      :finished (log/info "Accepted finished message." msg)))
+      :placed (log/info "Accepted placed message." msg)
+      :finished (let [[uuid player] msg]
+                  (log/info "Accepted finished message." msg)
+                  (finish! uuid player))))
   (recur))
