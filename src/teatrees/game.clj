@@ -115,42 +115,46 @@
 
 ;; Game implementation
 
-(def square [{ :x 0, :y 0, :z 0 }
-             { :x 0, :y 1, :z 0 } 
-             { :x 1, :y 0, :z 0 }
-             { :x 1, :y 1, :z 0 }])
+; (def square [{ :x 0, :y 0, :z 0 }
+;              { :x 0, :y 1, :z 0 } 
+;              { :x 1, :y 0, :z 0 }
+;              { :x 1, :y 1, :z 0 }])
 
-(def line   [{ :x -1, :y 0, :z 0 }
-             { :x 0, :y 0, :z 0 } 
-             { :x 1, :y 0, :z 0 }
-             { :x 2, :y 0, :z 0 }])
+; (def line   [{ :x -1, :y 0, :z 0 }
+;              { :x 0, :y 0, :z 0 } 
+;              { :x 1, :y 0, :z 0 }
+;              { :x 2, :y 0, :z 0 }])
 
-(def arrow  [{ :x -1, :y 0, :z 0 }
-             { :x 0, :y 0, :z 0 } 
-             { :x 0, :y 1, :z 0 }
-             { :x 1, :y 0, :z 0 }])
+; (def arrow  [{ :x -1, :y 0, :z 0 }
+;              { :x 0, :y 0, :z 0 } 
+;              { :x 0, :y 1, :z 0 }
+;              { :x 1, :y 0, :z 0 }])
 
-(def angle-l [{ :x -1, :y 1, :z 0 }
-              { :x -1, :y 0, :z 0 } 
-              { :x 0, :y 0, :z 0 }
-              { :x 1, :y 0, :z 0 }])
+; (def angle-l [{ :x -1, :y 1, :z 0 }
+;               { :x -1, :y 0, :z 0 } 
+;               { :x 0, :y 0, :z 0 }
+;               { :x 1, :y 0, :z 0 }])
 
-(def angle-r [{ :x -1, :y 0, :z 0 }
-              { :x 0, :y 0, :z 0 } 
-              { :x 1, :y 0, :z 0 }
-              { :x 1, :y 1, :z 0 }])
+; (def angle-r [{ :x -1, :y 0, :z 0 }
+;               { :x 0, :y 0, :z 0 } 
+;               { :x 1, :y 0, :z 0 }
+;               { :x 1, :y 1, :z 0 }])
 
-(def snake-l [{ :x -1, :y 0, :z 0 }
-              { :x 0, :y 0, :z 0 } 
-              { :x 0, :y 1, :z 0 }
-              { :x 1, :y 1, :z 0 }])
+; (def snake-l [{ :x -1, :y 0, :z 0 }
+;               { :x 0, :y 0, :z 0 } 
+;               { :x 0, :y 1, :z 0 }
+;               { :x 1, :y 1, :z 0 }])
 
-(def snake-r [{ :x -1, :y 1, :z 0 }
-              { :x 0, :y 1, :z 0 } 
-              { :x 0, :y 0, :z 0 }
-              { :x 1, :y 0, :z 0 }])
+; (def snake-r [{ :x -1, :y 1, :z 0 }
+;               { :x 0, :y 1, :z 0 } 
+;               { :x 0, :y 0, :z 0 }
+;               { :x 1, :y 0, :z 0 }])
 
-(def figures [square line arrow angle-l angle-r snake-l angle-r])
+; (def figures [square line arrow angle-l angle-r snake-l angle-r])
+
+(def figures [(for [x (range 0 x-max)
+                    y (range 0 y-max)]
+              {:x x :y y :z 0})])
 
 (defn rotate* [direction axis figure center]
   (let [rest-axes (remove #{axis} [:x :y :z])
@@ -246,9 +250,11 @@
                   :top [> -]
                   :bottom [< +])
         line-set (into #{} line-vec)]
+    (log/info "Cleanse called")
+    (log/info (remove #(line-set (:z %) field))
     (->> field
       (remove #(line-set (:z %)))
-      (map #(calc-and-shift % cmp line-vec zb op)))))
+      (map #(calc-and-shift % cmp line-vec zb op))))))
 
 (defn place-new-fig
   [player]
@@ -267,11 +273,12 @@
 
 (defn rows-to-remove
   [field figure]
-  (->> figure
-       (map :z)
-       set
-       sort
-       (filter #(row-is-full? field %))))
+  (let [result (->> figure
+                 (map :z)
+                 set
+                 sort
+                 (filter #(row-is-full? field %)))]
+    result))
 
 (defn move
   [dir figure field player zborder]
@@ -317,9 +324,11 @@
           (if (= dir :fall)
             (fall field figure player border-pos)
             (move dir figure field player border-pos))
-        no-rows (if new-fig (rows-to-remove new-field new-fig) [])
+        no-rows (if new-fig [] (rows-to-remove new-field figure))
         cleanise-dir (if (= player 1) :bottom :top)
-        cleansed-field (cleanise-field cleanise-dir no-rows new-field (game :border-pos))
+        cleansed-field (if (seq no-rows)
+                         (cleanise-field cleanise-dir no-rows new-field (game :border-pos))
+                         new-field)
         new-border (+ border-pos (* (count no-rows) (if (= player 1) -1 1)))
         score (* (count no-rows) x-max y-max)
         new-fig (if new-fig
@@ -341,9 +350,7 @@
     (log/info action)
     (case action
       :move (let [[uuid player dir] msg]
-              (log/info "Accepted move message." msg)
               (move! uuid player dir))
       :rotate (apply call-rotate! msg)
-      :placed (log/info "Accepted placed message." msg)
       :finished (log/info "Accepted finished message." msg)))
   (recur))
