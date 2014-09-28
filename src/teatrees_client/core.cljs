@@ -26,11 +26,11 @@
 (def app-state
   (atom
     {:game-state :welcome
-     :game-field-size {:x 11 :y 11 :z 31}
+     :game-field-size {:x 7 :y 7 :z 21}
      :cell-size 20
      :cell-gap 2
      :game-field []
-     :border-pos 15
+     :border-pos 10
      :uuid nil
      :player-name ""
      :player-no 0
@@ -46,7 +46,7 @@
   (om/update! app :game-state :ended))
 
 (defn update-received [app data timer]
-  (let [{:keys [state game-field players border-pos]} data]
+  (let [{:keys [state field players border-pos]} data]
     (case state
       :ended
       (do 
@@ -54,7 +54,7 @@
         (end-game app data))
       :started
       (do
-        (om/update! app :game-field game-field)
+        (om/update! app :game-field field)
         (om/update! app :border-pos border-pos)
         (om/transact! app :players
           #(map merge % players)))

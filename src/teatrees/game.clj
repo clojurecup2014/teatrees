@@ -3,10 +3,10 @@
             [clojure.core.async :as async]
             [clj-time.core :refer [before? now ago minutes]]))
 
-(def x-max 10)
-(def y-max 10)
+(def x-max 7)
+(def y-max 7)
 (def z-max 21)
-(def zborder 11)
+(def zborder 10)
 
 (def rate 1000)
 (def keep-results (* 60 1000))
@@ -48,9 +48,11 @@
     (if (> (count @available-games) 0)
       (let [game-old (peek @available-games)
             game-new (-> game-old
-                         (assoc :state :started
-                                :field (map place-new-fig [1 2]))
-                         (update-in [:players] conj {:name name :score 0}))
+                         (assoc :state :started)
+                         (assoc-in [:players 0 :fig] (place-new-fig 1))
+                         (update-in [:players] conj {:name name
+                                                     :score 0
+                                                     :fig (place-new-fig 2)}))
             uuid (:uuid game-new)]
         (log/info "Found room" uuid "Starting...")
         (alter available-games pop)
@@ -58,7 +60,7 @@
         (make-timer uuid)
         (success (assoc game-new :player-no 1)))
       (let [gm { :uuid (make-uuid)
-                 :border-pos (int (/ z-max 2))
+                 :border-pos zborder
                  :players [{:name name :score 0}]
                  :field []
                  :state :awaiting }]
@@ -95,11 +97,11 @@
   [uuid dir player]
   (if (@current-games uuid)
     (do
-      (case player)
+      (case player
         "1" (when-not (= dir :top)
-              (async/go (async/>! events [:move uuid player :dir])))
+              (async/go (async/>! events [:move uuid 1 dir])))
         "2" (when-not (= dir :bottom)
-              (async/go (async/>! events [:move uuid player :dir])))
+              (async/go (async/>! events [:move uuid 2 dir]))))
       (success "ok"))
     (failure "Game not found" :internal-server-error))) 
 
@@ -186,13 +188,14 @@
 
 (defn check-dir 
   [f figure field]
+  
   (nil? (some (prohibited-fields f figure) field)))
 
 (defn can-move?
-  [dir figure field]
+  [dir figure field zborder]
   (let [xb (dec x-max)
         yb (dec y-max)
-        zb (dec zborder)]
+        zb zborder]
     (case dir
       :left   (and 
                 (check-dir #(assoc % :x (dec (:x %))) figure field)
@@ -208,10 +211,10 @@
                 (< (:x (apply max-key :x figure)) xb))
       :bottom (and 
                 (check-dir #(assoc % :z (inc (:z %))) figure field)
-                (< (:z (apply max-key :z figure)) zb))
+                (< (:z (apply max-key :z figure)) (dec zb)))
       :top    (and 
                 (check-dir #(assoc % :z (dec (:z %))) figure field)
-                (> (:z (apply max-key :z figure)) zb)))))
+                (> (:z (apply min-key :z figure)) (inc zb))))))
 
 (defn call-rotate!
   [uuid dir axis player]
@@ -246,8 +249,8 @@
 (defn place-new-fig
   [player]
   (let [fig (rand-nth figures)
-        shift {:x (/ x-max 2)
-               :y (/ y-max 2)
+        shift {:x (int (/ x-max 2))
+               :y (int (/ y-max 2))
                :z (if (= player 1) 0 (dec z-max))}
         moved-fig (map #(merge-with + % shift) fig)]
     moved-fig))
@@ -267,7 +270,7 @@
        (filter #(row-is-full? field %))))
 
 (defn move
-  [dir figure field player]
+  [dir figure field player zborder]
   (let [[axis dir-fn] (case dir
                         :bottom [:z inc]
                         :top [:z dec]
@@ -276,42 +279,42 @@
                         :up [:y inc]
                         :down [:y dec])]
     (cond
-      (can-move? dir figure field)
+      (can-move? dir figure field zborder)
         (do
           (log/info "Going move" dir)
           {:field field
            :figure (map #(assoc % axis (dir-fn (axis %))) figure)})
       (or (and (= player 1) (= dir :bottom)))
-        {:field (merge field figure)
+        {:field (concat field figure)
          :figure nil
-         :failed (not (can-move? :top figure field))}
+         :failed (not (can-move? :top figure field zborder))}
       (or (and (= player 2) (= dir :top)))
-        {:field (merge field figure)
+        {:field (concat field figure)
          :figure nil
-         :failed (not (can-move? :bottom figure field))}
+         :failed (not (can-move? :bottom figure field zborder))}
       :else
         {:field field :figure figure})))
 
 (defn move!
   [uuid player dir]
-  (let [game (@current-games uuid)
-        field (:field game)
-        figure (get-in game [:players player :figure])
+  (let [{:keys [field border-pos] :as game} (@current-games uuid)
+        figure (get-in game [:players (dec player) :fig])
         {new-field :field new-fig :figure failed :failed}
-          (move dir figure field player)
+          (move dir figure field player border-pos)
         no-rows (if new-fig (rows-to-remove new-field new-fig) [])
         cleansed-field (cleanise-field dir no-rows new-field (game :border-pos))
         new-fig (if new-fig
                   new-fig
                   (place-new-fig player))
         new-game (-> game
-                     (assoc :field cleansed-field)
-                     (assoc-in [:players player :figure] new-fig))]
+                   (assoc :field cleansed-field)
+                   (assoc-in [:players (dec player) :fig] new-fig))]
+    (log/info "Moved fig " figure " to " new-fig)
     (dosync
-      (alter current-games assoc uuid game))
+      (alter current-games assoc uuid new-game))
     (when failed
       (async/go
-        (async/>!! events [:finished uuid player])))))
+        (async/>! events [:finished uuid player])))))
   
 (async/go-loop []
   (let [[[action & msg] _] (async/alts! [events])]
