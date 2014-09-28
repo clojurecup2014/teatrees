@@ -8,6 +8,8 @@
 (def z-max 21)
 (def zborder 11)
 
+(def rate 1000)
+
 (def available-games (ref (clojure.lang.PersistentQueue/EMPTY)))
 (def current-games (ref {}))
 
@@ -19,6 +21,17 @@
 (defn- failure
   ([response] (failure response :bad-request))
   ([response status] {:status status :body {:error response}}))
+
+(defn make-timer
+  [uuid]
+  (future
+    (loop []
+      (when-let [cg (@current-games uuid)]
+        (when (= :started (cg :state))
+          (async/>!! events [:move uuid 1 :bottom])
+          (async/>!! events [:move uuid 2 :top])
+          (Thread/sleep rate)
+          (recur))))))
 
 (defn make-uuid [] (str (java.util.UUID/randomUUID)))
 
@@ -34,6 +47,7 @@
         (log/info "Found room" uuid "Starting...")
         (alter available-games pop)
         (alter current-games assoc uuid game-new)
+        (make-timer uuid)
         (success (assoc game-new :player-no 1)))
       (let [gm { :uuid (make-uuid)
                  :border-pos (int (/ z-max 2))
@@ -72,11 +86,11 @@
   [uuid dir player]
   (if (@current-games uuid)
     (do
-      (case player
+      (case player)
         "1" (when-not (= dir :top)
               (async/go (async/>! events [:move uuid player :dir])))
         "2" (when-not (= dir :bottom)
-              (async/go (async/>! events [:move uuid player :dir]))))
+              (async/go (async/>! events [:move uuid player :dir])))
       (success "ok"))
     (failure "Game not found" :internal-server-error))) 
 
@@ -195,7 +209,8 @@
   (case dir
     :bottom (if (can-move? dir figure field)
               {:field field :figure (map #(assoc % :z (inc (:z %))) figure)}
-              {:field (merge field figure) :figure nil})
+              (do
+                {:field (merge field figure) :figure nil}))
     :top    (if (can-move? dir figure field)
               {:field field :figure (map #(assoc % :z (dec (:z %))) figure)}
               {:field (merge field figure) :figure nil})
@@ -209,3 +224,14 @@
                       :down  (map #(assoc % :y (dec (:y %))) figure)))
                    figure)]
           {:field field :figure fg})))
+
+
+(async/go-loop []
+  (let [[msg _] (async/alts! [events])]
+    (log/info (first msg))
+    (case (first msg)
+      :move (log/info "Accepted move message." msg)
+      :rotate (log/info "Accepted rotate message." msg)
+      :placed (log/info "Accepted placed message." msg)
+      :finished (log/info "Accepted finished message." msg)))
+  (recur))
