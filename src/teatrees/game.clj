@@ -9,6 +9,7 @@
 (def zborder 10)
 
 (def rate 1000)
+(def keep-results (* 60 1000))
 
 (def available-games (ref (clojure.lang.PersistentQueue/EMPTY)))
 (def current-games (ref {}))
@@ -27,11 +28,15 @@
   (future
     (loop []
       (when-let [cg (@current-games uuid)]
-        (when (= :started (cg :state))
-          (async/>!! events [:move uuid 1 :bottom])
-          (async/>!! events [:move uuid 2 :top])
-          (Thread/sleep rate)
-          (recur))))))
+        (case (cg :state)
+          :finished (do
+                      (Thread/sleep keep-results)
+                      (dosync (alter current-games dissoc uuid)))
+          :started (do
+                     (async/>!! events [:move uuid 1 :bottom])
+                     (async/>!! events [:move uuid 2 :top])
+                     (Thread/sleep rate)
+                     (recur)))))))
 
 (defn make-uuid [] (str (java.util.UUID/randomUUID)))
 
@@ -57,6 +62,7 @@
       (let [gm { :uuid (make-uuid)
                  :border-pos zborder
                  :players [{:name name :score 0}]
+                 :field []
                  :state :awaiting }]
         (dosync
           (log/info "Created room" (gm :uuid))
@@ -102,7 +108,7 @@
 (defn rotate-figure
   [uuid dir axis player]
   (if (@current-games uuid)
-    (async/go (async/>! events [uuid dir axis player]))
+    (async/go (async/>! events [:rotate uuid dir axis player]))
     (failure "Game not found" :internal-server-error)))
 
 ;; Game implementation
@@ -210,6 +216,36 @@
                 (check-dir #(assoc % :z (dec (:z %))) figure field)
                 (> (:z (apply min-key :z figure)) (inc zb))))))
 
+(defn call-rotate!
+  [uuid dir axis player]
+  (when-let [cg (@current-games uuid)]
+    (let [pl (dec (Integer/parseInt player))
+          fig ((:players cg) pl)
+          field (cg :field)
+          rotated (rotate dir axis fig field player)]
+      (dosync
+        (alter current-games assoc-in [uuid :players pl :figure] rotated)))))
+
+(defn- calc-shift-clean
+  [cell cmp line-vec zb]
+  (count (filter #(cmp (cell :z) % zb) line-vec)))
+
+(defn- shift-cell
+  [cell shift op]
+  (assoc cell :z (op (cell :z) shift)))
+
+(defn- calc-and-shift
+  [cell cmp line-vec zb op]
+  (let [shift (calc-shift-clean cell cmp line-vec zb)]
+    (shift-cell cell shift op)))
+
+(defn cleanise-field
+  [dir line-vec field zb]
+  (let [[cmp op] (case dir
+                  :top [> -]
+                  :bottom [< +])]
+    (map #(calc-and-shift % cmp line-vec zb op) field)))
+
 (defn place-new-fig
   [player]
   (let [fig (rand-nth figures)
@@ -266,13 +302,13 @@
         {new-field :field new-fig :figure failed :failed}
           (move dir figure field player border-pos)
         no-rows (if new-fig (rows-to-remove new-field new-fig) [])
-        ; new-field (remove-rows new-field no-rows)
+        cleansed-field (cleanise-field dir no-rows new-field (game :border-pos))
         new-fig (if new-fig
                   new-fig
                   (place-new-fig player))
         new-game (-> game
-                     (assoc :field new-field)
-                     (assoc-in [:players (dec player) :fig] new-fig))]
+                   (assoc :field cleansed-field)
+                   (assoc-in [:players (dec player) :fig] new-fig))]
     (log/info "Moved fig " figure " to " new-fig)
     (dosync
       (alter current-games assoc uuid new-game))
@@ -287,7 +323,8 @@
       :move (let [[uuid player dir] msg]
               (log/info "Accepted move message." msg)
               (move! uuid player dir))
-      :rotate (log/info "Accepted rotate message." msg)
+      :rotate (apply call-rotate! msg)
       :placed (log/info "Accepted placed message." msg)
+      ;; :destroyed (apply shift-field* msg) ;; expects [uuid line-vec player]
       :finished (log/info "Accepted finished message." msg)))
   (recur))
