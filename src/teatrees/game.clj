@@ -10,7 +10,8 @@
 
 (def available-games (ref (clojure.lang.PersistentQueue/EMPTY)))
 (def current-games (ref {}))
-(def game-channels (ref {}))
+
+(def events (async/chan))
 
 (defn- success 
   [response] { :status :ok :body response })
@@ -26,31 +27,38 @@
   (dosync
     (if (> (count @available-games) 0)
       (let [game-old (peek @available-games)
-            game-new (assoc game-old :player2 name 
-                                     :state :started
-                                     :time (now))
+            game-new (-> game-old
+                         (assoc :state :started)
+                         (update-in [:players] conj {:name name :score 0}))
             uuid (:uuid game-new)]
         (log/info "Found room" uuid "Starting...")
         (alter available-games pop)
-        (alter current-games conj game-new)
-        (alter game-channels assoc uuid (async/chan))
-        (success game-new))
-      (let [gm { :uuid (make-uuid) 
-                 :player1 name 
-                 :player2 false 
-                 :state :awaiting}]
+        (alter current-games assoc uuid game-new)
+        (success (assoc game-new :player-no 1)))
+      (let [gm { :uuid (make-uuid)
+                 :border-pos (int (/ z-max 2))
+                 :players [{:name name :score 0}]
+                 :state :awaiting }]
         (dosync
           (log/info "Created room" (gm :uuid))
           (alter available-games conj gm)
-          (success gm))))))
+          (success (assoc (select-keys gm [:uuid :state]) :player-no 0)))))))
 
 (defn high-scores
   []
   (success "empty"))
 
+(defn awaiting-state
+  [uuid]
+  (if-let [game (@current-games uuid)]
+    (success game)
+    (success {:state :awaiting})))
+
 (defn field-state
   [uuid]
-  (success "ok"))
+  (if-let [game (@current-games uuid)]
+    (success game)
+    (success {:state :unknown})))
 
 (defn available
   []
@@ -61,10 +69,20 @@
   (success "ok"))
 
 (defn move-figure
-  [uuid dir playernm]
+  [uuid dir player]
   (if-let [ch (@game-channels uuid)]
-    ()
+    (do
+      (case player
+        :player1 (when-not (= dir :top)
+                   (async/go (>! events [:move uuid playernm :dir])))
+        :player2 (when-not (= dir :bottom)
+                   (async/go (>! events [:move uuid playernm :dir]))))
+      (success "ok"))
     (failure "Game not found" :internal-server-error))) 
+
+(defn rotate-figure
+  [uuid dir axis player]
+  (if-let [ch @]))
 
 ;; Game implementation
 
@@ -105,7 +123,7 @@
 
 (def figures [square line arrow angle-l angle-r snake-l angle-r])
 
-(defn rotate-figure* [direction axis figure center]
+(defn rotate* [direction axis figure center]
   (let [rest-axes (remove #{axis} [:x :y :z])
         rot-fn (case direction
                  :cw (fn [[x y]] [y (- x)])
@@ -122,21 +140,21 @@
 (defn can-rotate?
   [dir axis figure field zmin zmax]
   (let [center (second figure)
-        prohibited (into #{} (rotate-figure* figure center axis dir))]
+        prohibited (into #{} (rotate* figure center axis dir))]
     (and 
       (nil? (some prohibited field))
       (every? #(and (> % -1) (< % x-max)) (map :x prohibited))
       (every? #(and (> % -1) (< % y-max)) (map :y prohibited))
       (every? #(and (> % zmin) (< % z-max)) (map :z prohibited)))))
 
-(defn rotate-figure
+(defn rotate
   [direction axis figure field player]
   (let [center (second figure)
         [zmin zmax] (case player
                       :player1 [-1 zborder]
                       :player2 [zborder z-max])]
     (if (can-rotate? direction axis figure field zmin zmax)
-      (rotate-figure* direction axis figure center)
+      (rotate* direction axis figure center)
       figure)))
 
 (defn prohibited-fields [f figure] (into #{} (map f figure)))
