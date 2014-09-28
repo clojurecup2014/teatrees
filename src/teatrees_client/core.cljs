@@ -17,12 +17,14 @@
 
 (def app-state
   (atom
-    {:game-state :loading
-     :game-field-size {:x 10 :y 10 :z 30}
+    {:game-state :welcome
+     :game-field-size {:x 10 :y 10 :z 31}
      :cell-size 20
      :cell-gap 2
      :game-field []
-     :session-id nil
+     :border-pos 15
+     :uuid nil
+     :player-name ""
      :player-no 0
      ; :players (vec (repeat 2 {:name ""
      ;                          :score 0
@@ -32,31 +34,59 @@
 ;; =================================
 ;; App lifecycle
 
-(defn update-received [app {:keys [game-field players] :as data}]
-  (om/update! app :game-field game-field)
-  (om/transact! app :players
-    #(map merge % players)))
+(defn end-game [app data]
+  (om/update! app :game-state :ended))
 
-(defn wait-for-start [app data]
-  (om/update! app :game-state :waiting)
-  (om/update! app :session-id (:session-id data)))
+(defn update-received [app data timer]
+  (let [{:keys [game-state game-field players]} data]
+    (when (= game-state :ended)
+      (.stop timer)
+      (end-game app data))
+    (om/update! app :game-field game-field)
+    (om/transact! app :players
+      #(map merge % players))))
 
-(defn start-game [app data]
+(defn game-poll [app timer]
+  (edn-xhr {:method :get
+            :url "request-update"
+            :data {:uuid (:uuid app)}
+            :on-complete #(update-received app % timer)}))
+
+(defn start-game [app]
   (om/update! app :game-state :running)
-  (update-received app (:update data)))
+  (let [timer (goog.Timer. 1000)]
+    (.start timer)
+    (events/listen timer goog.Timer/TICK #(game-poll app timer))))
+
+(defn wait-poll [app timer]
+  (edn-xhr {:method :get
+            :url "join"
+            :data {:uuid (:uuid app)}
+            :on-complete
+              (fn [{:keys [status] :as data}]
+                (when (= status :start)
+                  (.stop timer)
+                  (start-game app)))}))
+
+(defn wait-for-start [app]
+  (om/update! app :game-state :waiting)
+  (let [timer (goog.Timer. 1000)]
+    (.start timer)
+    (events/listen timer goog.Timer/TICK #(wait-poll app timer))))
 
 (defn end-game [app data]
   (om/update! app :game-state :ended))
 
 (defn start-or-wait [app data]
+  (om/update! app :uuid (:uuid data))
   (case (:status data) 
-    :wait (wait-for-start app data)
-    :start (start-game app data)))
+    :wait (wait-for-start app)
+    :start (start-game app)))
 
-(defn try-join-game-test [app]
+(defn try-join-game-test [app name]
   (start-or-wait app
                  {:status :start
-                  :session-id 1
+                  :uuid 1
                   :update {:game-field [{:id 0 :x 0 :y 0 :z 0}
                                         {:id 1 :x 0 :y 1 :z 0}
                                         {:id 2 :x 1 :y 1 :z 0}
@@ -68,10 +98,11 @@
                                                {:id 12 :x 6 :y 5 :z 39}
                                                {:id 13 :x 5 :y 5 :z 37}]}]}}))
 
-(defn try-join-game [app]
+(defn try-join-game [app name]
   (edn-xhr {:method :get
-        :url "join"
-        :on-complete #(start-or-wait app %)}))
+            :url "join"
+            :data {:name name}
+            :on-complete #(start-or-wait app %)}))
 
 ;; =================================
 ;; Interaction
@@ -117,12 +148,12 @@
 ;; Presentation
 
 (def view-defs
-  {:front {:dims [:x :z :y] :dirs [1 1 1]}
-   :back {:dims [:x :z :y] :dirs [-1 1 -1]}
-   :left {:dims [:y :z :x] :dirs [-1 1 1]}
-   :right {:dims [:y :z :x] :dirs [1 1 -1]}
-   :top {:dims [:x :y :z] :dirs [1 1 -1]}
-   :bottom {:dims [:x :y :z] :dirs [1 -1 1]}})
+  {:front {:dims [:x :z :y] :dirs [1 -1 1]}
+   :back {:dims [:x :z :y] :dirs [-1 -1 -1]}
+   :left {:dims [:y :z :x] :dirs [-1 -1 1]}
+   :right {:dims [:y :z :x] :dirs [1 -1 -1]}
+   :top {:dims [:x :y :z] :dirs [1 -1 -1]}
+   :bottom {:dims [:x :y :z] :dirs [1 1 1]}})
 
 (defn view-visible-dims [view]
   (->> view-defs view :dims (take 2)))
@@ -135,7 +166,7 @@
     (let [view-dims (take 2 dims)
           depth-dim (last dims)
           norm-coord (fn [value size invert]
-                            (if invert (- size value) value))
+                            (if invert (- size 1 value) value))
           dir-map (apply hash-map (interleave dims dirs))
           norm-field (for [cell field]
                        (reduce
@@ -164,6 +195,32 @@
       (dom/rect {:class "cell"
                  :x x :y y :width cell-size :height cell-size}))))
 
+(defn bg-for-view [view width-px height-px conv border cell-size cell-gap]
+  (condp contains? view
+    #{:front :back :left :right}
+      (let [border-px (conv border)
+            p2-y (+ border-px cell-size cell-gap)]
+        (println {:p2-y p2-y :border-px border-px :width-px width-px :height-px height-px})
+        [(dom/rect {:class "view-bg-player1"
+                    :width width-px
+                    :height (- border-px cell-gap)})
+         (dom/rect {:class "view-bg-border"
+                    :y border-px
+                    :width width-px
+                    :height cell-size})
+         (dom/rect {:class "view-bg-player2"
+                    :y p2-y
+                    :width width-px
+                    :height (- height-px p2-y)})])
+    #{:top}
+      [(dom/rect {:class "view-bg-player1"
+                  :width width-px
+                  :height height-px})]
+    #{:bottom}
+      [(dom/rect {:class "view-bg-player2"
+                  :width width-px
+                  :height height-px})]))
+
 (defcomponent game-field-view [app owner {:keys [ch view] :as opts}]
   (render [_]
     (let [{:keys [game-field game-field-size cell-size cell-gap]} app
@@ -172,14 +229,12 @@
           visible-dims (view-visible-dims view)
           view-size (map game-field-size visible-dims)
           [width-px height-px] (map #(- (conv %) cell-gap) view-size)
-          
           ]
-      (dom/div {:class "col-xs-3"}
+      (dom/div {:class "col-xs-3 game-view"}
+        (dom/h3 (-> view name str/capitalize))
         (dom/svg {:width width-px
                   :height height-px}
-          (dom/rect {:class "view-frame"
-                     :width width-px
-                     :height height-px})
+          (bg-for-view view width-px height-px conv (:border-pos app) cell-size cell-gap)
           (for [cell proj]
             (om/build game-field-cell {:cell cell
                                        :conv conv
@@ -190,10 +245,14 @@
   (render [_]
     (let [views [:top :left :front]
           {:keys [game-field game-field-size]} app]
-      (dom/div {:class "row"}
-        (om/build game-field-view app {:opts {:view :top}})
-        (om/build game-field-view app {:opts {:view :front}})
-        (om/build game-field-view app {:opts {:view :left}})))))
+      (dom/div {:class "container-fluid"
+          :id "tetris"
+          :ref "tetris"}
+        (dom/div {:class "row game-field"}
+          (om/build game-field-view app {:opts {:view :top}})
+          (om/build game-field-view app {:opts {:view :left}})
+          (om/build game-field-view app {:opts {:view :front}})
+          (om/build game-field-view app {:opts {:view :bottom}}))))))
 
 (defn calc-cell-size-and-gap [field-size window-size]
   (let [min-x (/ (:x window-size) 4 (:x field-size))
@@ -203,14 +262,12 @@
         gap (Math/floor (/ full-size 10))
         cell-gap (if (zero? gap) 1 gap)
         cell-size (- full-size cell-gap)]
-    (println field-size window-size {:cell-size cell-size :cell-gap cell-gap})
     [cell-size cell-gap]))
 
 (defn window-resized [app owner]
-  (println "window-resized")
   (let [{:keys [game-field-size]} (om/value app)
-        win-size {:x (- (.-innerWidth js/window) 10)
-                  :y (- (.-innerHeight js/window) 10)}
+        win-size {:x (- (.-innerWidth js/window) 20)
+                  :y (- (.-innerHeight js/window) 20)}
         [cell-size cell-gap] (calc-cell-size-and-gap game-field-size
                                                      win-size)]
     (om/update! app :cell-size cell-size)
@@ -221,19 +278,73 @@
                  (.-RESIZE events/EventType)
                  #(window-resized app owner)))
 
+(defn handle-event [app msg]
+  (println "msg received" msg)
+  (case (:type msg)
+    :try-join-game
+      (try-join-game app (:name msg))))
+
+(defcomponent footer [app owner]
+  (render [_]
+    (dom/div {:class "footer"}
+      (dom/a {:href "https://github.com/clojurecup2014/teatrees"} "Tea Trees")
+      " by Bumblebears (2014)")))
+
+(defcomponent welcome [app owner {:keys [ch] :as opts}]
+  (render [_]
+    (dom/div {:class "container small-container"}
+      (dom/div {:class "jumbotron"}
+        (dom/h1 "Tea Trees")
+        (dom/p "3d tetris")
+        (dom/form {:on-submit (fn [e]
+                                (.preventDefault e)
+                                (put! ch {:type :try-join-game
+                                          :name (.-value (om/get-node owner "username"))}))}
+          (dom/div {:class "form-group"}
+            (dom/label {:for "username"} "Enter your name")
+            (dom/input {:class "form-control"
+                        :id "username"
+                        :ref "username"}))
+          (dom/button {:class "btn btn-primary"} "Start!")))
+      (om/build footer app))))
+
+(defcomponent waiting [app owner]
+  (render [_]
+    (dom/div {:class "container small-container"}
+      (dom/h1 "Tea Trees")
+      (dom/p (:player-name app)
+             ", we're waiting for another player to join...\n"
+             "Don't run away as it won't take long."))))
+
+(defcomponent game-ended [app owner]
+  (render [_]
+    (dom/div {:clas "contianer small-container"}
+      (dom/h1 "Tea Trees")
+      (dom/h2 "Game over")
+      (let [winner (apply max-key :score (:players app))]
+        (dom/p (:name winner) " won, let's congratulate him (or her)!"))
+      (dom/button {:class "btn btn-primary"
+                   :role "button"
+                   :on-click #(try-join-game app (:player-name app))} "Play again"))))
+
 (defcomponent tetris [app owner]
   (init-state [_]
     {:ch (chan)})
   (will-mount [_]
-    (try-join-game-test app))
+    (let [ch (om/get-state owner :ch)]
+      (go (loop []
+        (let [msg (<! ch)]
+          (handle-event app msg)
+          (recur))))))
   (did-mount [_]
     (monitor-window-resize app owner)
     (window-resized app owner))
   (render-state [_ {:keys [ch] :as state}]
-    (dom/div {:class "container-fluid"
-              :id "tetris"
-              :ref "tetris"}
-      (om/build game-field app {:opts {:ch ch}}))))
+    (condp contains? (:game-state app)
+      #{:welcome} (om/build welcome app {:opts {:ch ch}})
+      #{:waiting} (om/build waiting app) 
+      #{:running} (om/build game-field app {:opts {:ch ch}})
+      #{:ended} (om/build game-ended app {:opts {:ch ch}}))))
 
 (om/root
   tetris

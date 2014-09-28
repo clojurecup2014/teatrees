@@ -2,11 +2,39 @@
   margin: 10px;
 }
 
+.small-container {
+  width: 640px;
+}
+
 .view-frame {
   fill: none;
   stroke: red;
 }
 
 .cell {
-  fill: green;
+  fill: #34495e;
 }
+
+.game-field {
+  display: table !important;
+  table-layout: fixed;
+}
+
+.game-view {
+  display: table-cell;
+  vertical-align :middle;
+  text-align: center;
+}
+
+.view-bg-player1 {
+  fill: #95b9d3;
+}
+
+.view-bg-player2 {
+  fill: #e1a49e;
+}
+
+.view-bg-border {
+  fill: #dfbb9c;
+}
+
